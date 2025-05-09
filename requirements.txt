@@ -1,0 +1,10 @@
+Django
+django-debug-toolbar
+openpyxl
+psycopg2-binary
+geopandas
+Shapely
+Fiona
+django-leaflet
+numpy
+gdal==3.6.2

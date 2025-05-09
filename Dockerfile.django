@@ -1,0 +1,58 @@
+FROM python:3.9-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    netcat-openbsd \
+    postgresql-client \
+    binutils \
+    libproj-dev \
+    gdal-bin \
+    libgdal-dev \
+    libgeos-dev \
+    libpq-dev \
+    build-essential \
+    python3-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Specifically handle GDAL installation without using gdal-config
+# Get GDAL version directly
+RUN GDAL_VERSION=$(gdal-config --version 2>/dev/null || echo "3.4.1") && \
+    echo "GDAL_VERSION=${GDAL_VERSION}" && \
+    # Set environment variables for building GDAL
+    export GDAL_CONFIG=/usr/bin/gdal-config && \
+    export CPLUS_INCLUDE_PATH=/usr/include/gdal && \
+    export C_INCLUDE_PATH=/usr/include/gdal && \
+    # Install GDAL with specific flags to avoid using gdal-config directly
+    pip install --global-option=build_ext \
+                --global-option="-I/usr/include/gdal" \
+                GDAL==${GDAL_VERSION}
+
+# Copy requirements file but exclude GDAL (we'll handle that separately)
+COPY requirements.txt .
+RUN grep -v "GDAL\|gdal" requirements.txt > requirements_filtered.txt && \
+    cat requirements_filtered.txt && \
+    pip install --no-cache-dir -r requirements_filtered.txt
+
+# Copy Django project
+COPY . .
+
+# Make wait script executable
+COPY wait_for_db.sh ./
+RUN chmod +x wait_for_db.sh
+
+# Expose port
+EXPOSE 8000
+
+# Start server
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

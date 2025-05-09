@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block content %}
+<div id="content-main">
+    <form action="." method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div>
+            <fieldset class="module aligned">
+                <div class="form-row">
+                    <div class="fieldBox">
+                        <label for="id_excel_file" class="required">Excel File:</label>
+                        <input type="file" name="excel_file" id="id_excel_file" accept=".xlsx,.xls" required>
+                        <div class="help">Upload an Excel file with the required columns</div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <div class="help-text">
+                <p><strong>{% trans 'Required fields in the imported file:' %}</strong></p>
+                <ul>
+                    <li>Code RMA</li>
+                    <li>Code ACAPS</li>
+                    <li>Dénomination RMA</li>
+                    <li>Ville</li>
+                    <li>Adresse</li>
+                    <li>Longitude</li>
+                    <li>Latitude</li>
+                    <li>Type BGD</li>
+                    <li>Partenaire</li>
+                    <li>Date création (in format d-m-yyyy, e.g. 15-4-2025)</li>
+                    <li>Etat BGD RMA</li>
+                </ul>
+                
+                <p><strong>{% trans 'Date format note:' %}</strong></p>
+                <p>The date should be in d-m-yyyy format (day-month-year). Examples: 1-4-2025, 15-12-2024</p>
+                <p>The system will also accept d/m/yyyy format (with slashes instead of hyphens).</p>
+            </div>
+
+            <div class="submit-row">
+                <input type="submit" value="{% trans 'Import Excel' %}" class="default" name="_import_file">
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

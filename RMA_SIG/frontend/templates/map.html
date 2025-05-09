@@ -1,0 +1,349 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RMA SIG</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    #info-card {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      z-index: 1000;
+      width: 250px;
+      font-family: Arial, sans-serif;
+    }
+    #toggle-container {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      font-family: Arial, sans-serif;
+    }
+    .toggle-switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 34px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #2196F3;
+    }
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+    .layer-label {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toggle-container">
+  <div class="toggle-switch">
+    <span class="layer-label">Provinces</span>
+    <label class="switch">
+      <input type="checkbox" id="layer-toggle">
+      <span class="slider"></span>
+    </label>
+    <span class="layer-label">Communes</span>
+  </div>
+</div>
+
+<div id="info-card" style="display: none;">
+  <h3 id="region-name"></h3>
+  <p><strong>Population:</strong> <span id="region-population"></span></p>
+  <!-- Add more fields here as needed -->
+</div>
+  
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  const map = L.map("map").setView([29, -6], 6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+  }).addTo(map);
+
+  // Store layers and current state
+  let provincesLayer = null;
+  let communesLayer = null;
+  let agencyLayer = null;
+  let currentRegionLayer = null;
+  let currentLayerType = 'provinces'; // Default view
+
+  // Toggle switch event listener
+  document.getElementById('layer-toggle').addEventListener('change', function(e) {
+    currentLayerType = this.checked ? 'communes' : 'provinces';
+    resetView();
+    loadCurrentLayer();
+  });
+
+  function resetView() {
+    // Reset any active selection
+    resetAllRegions();
+    clearAgencies();
+    
+    // Reset map view
+    map.setView([29, -6], 6);
+  }
+
+  function loadCurrentLayer() {
+    // Remove any existing layers
+    if (provincesLayer) map.removeLayer(provincesLayer);
+    if (communesLayer) map.removeLayer(communesLayer);
+    
+    // Load the appropriate layer
+    if (currentLayerType === 'provinces') {
+      loadProvinces();
+    } else {
+      loadCommunes();
+    }
+  }
+
+  function resetAllRegions() {
+    if (provincesLayer && currentLayerType === 'provinces') provincesLayer.resetStyle();
+    if (communesLayer && currentLayerType === 'communes') communesLayer.resetStyle();
+    currentRegionLayer = null;
+    document.getElementById("info-card").style.display = "none";  // Hide card
+  }
+
+  function highlightRegion(layer) {
+    layer.setStyle({
+      color: "#d35400",
+      weight: 4,
+      fillOpacity: 0.5
+    });
+  }
+
+  function clearAgencies() {
+    if (agencyLayer) {
+      map.removeLayer(agencyLayer);
+      agencyLayer = null;
+    }
+  }
+
+  function pointInPolygon(point, polygon) {
+    const x = point[0], y = point[1];
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i][0], yi = polygon[i][1];
+      const xj = polygon[j][0], yj = polygon[j][1];
+
+      const intersect = ((yi > y) !== (yj > y)) &&
+                        (x < (xj - xi) * (y - yi) / ((yj - yi) + 0.00000001) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function loadAgenciesWithinRegion(regionFeature) {
+    fetch("{% static 'geojson/acaps_data.geojson' %}")
+      .then(res => res.json())
+      .then(data => {
+        const regionGeometry = regionFeature.geometry;
+        const filtered = data.features.filter(feature => {
+          const [lng, lat] = feature.geometry.coordinates;
+          const point = [lng, lat];
+
+          if (regionGeometry.type === "Polygon") {
+            return pointInPolygon(point, regionGeometry.coordinates[0]);
+          } else if (regionGeometry.type === "MultiPolygon") {
+            return regionGeometry.coordinates.some(poly =>
+              pointInPolygon(point, poly[0])
+            );
+          }
+          return false;
+        });
+
+        if (agencyLayer) map.removeLayer(agencyLayer);
+
+        agencyLayer = L.geoJSON({ type: "FeatureCollection", features: filtered }, {
+          pointToLayer: (feature, latlng) => {
+            const isRMA = feature.properties.mandante === "Royale Marocaine D'assurance";
+            return L.circleMarker(latlng, {
+              radius: 6,
+              fillColor: isRMA ? "#2980b9" : "#27ae60",  // blue for RMA, green otherwise
+              color: "#fff",
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.9
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            const props = feature.properties;
+            layer.bindPopup(`
+              <strong>${props.nom}</strong><br/>
+              <b>Qualité:</b> ${props.qualité}<br/>
+              <b>Mandante:</b> ${props.mandante}<br/>
+              <b>Adresse:</b> ${props.adresse}<br/>
+              <b>Localité:</b> ${props.localité}
+            `);
+          }
+        }).addTo(map);
+      });
+  }
+
+  function handleRegionClick(feature, layer) {
+    if (currentRegionLayer !== layer) {
+      resetAllRegions();
+      clearAgencies();
+      currentRegionLayer = layer;
+      highlightRegion(layer);
+      map.fitBounds(layer.getBounds());
+      loadAgenciesWithinRegion(feature);
+
+      // Show card with region info
+      const props = feature.properties;
+      let name = props.shapeName || props.Nom_Commun || "Inconnu";
+      let pop = props.population || props.Population;
+
+      document.getElementById("region-name").textContent = name;
+      document.getElementById("region-population").textContent = pop ? pop.toLocaleString() : "Donnée non disponible";
+
+      document.getElementById("info-card").style.display = "block";
+    }
+  }
+
+  function onEachFeature(feature, layer) {
+    layer.on({
+      mouseover: function (e) {
+        if (currentRegionLayer !== layer) {
+          layer.setStyle({
+            weight: 4,
+            color: '#888',
+            fillOpacity: 0.5
+          });
+        }
+
+        if (feature.properties) {
+          const name = feature.properties.shapeName || feature.properties.Nom_Commun || 'Inconnu';
+
+          layer.bindTooltip(
+            `<strong>${name}</strong>`,
+            {
+              permanent: false,
+              direction: 'top',
+              offset: [0, -10],
+              sticky: true
+            }
+          ).openTooltip(e.latlng);
+        }
+      },
+      mouseout: function (e) {
+        if (currentRegionLayer !== layer) {
+          if (currentLayerType === 'provinces') {
+            provincesLayer.resetStyle(layer);
+          } else {
+            communesLayer.resetStyle(layer);
+          }
+          layer.closeTooltip();
+        }
+      },
+      click: function (e) {
+        handleRegionClick(feature, layer);
+      }
+    });
+  }
+
+  function loadProvinces() {
+    fetch("{% static 'geojson/provinces.geojson' %}")
+      .then(res => res.json())
+      .then(provinceData => {
+        provincesLayer = L.geoJSON(provinceData, {
+          style: {
+            color: 'blue',
+            weight: 2,
+            fillOpacity: 0.3
+          },
+          onEachFeature: onEachFeature
+        }).addTo(map);
+      });
+  }
+
+  function loadCommunes() {
+    fetch("{% static 'geojson/communes.geojson' %}")
+      .then(res => res.json())
+      .then(communeData => {
+        communesLayer = L.geoJSON(communeData, {
+          style: {
+            color: 'green',
+            weight: 1,
+            fillOpacity: 0.2
+          },
+          onEachFeature: onEachFeature
+        }).addTo(map);
+      });
+  }
+
+  // Zoom-out reset
+  map.on("zoomend", () => {
+    if (map.getZoom() < 8) {
+      clearAgencies();
+      resetAllRegions();
+    }
+  });
+  
+  // Also clear agencies when zooming out in communes view
+  map.on("zoom", () => {
+    if (currentLayerType === 'communes' && map.getZoom() < 10) {
+      clearAgencies();
+    }
+  });
+
+  // Initialize with provinces view
+  loadProvinces();
+</script>
+
+</body>
+</html>

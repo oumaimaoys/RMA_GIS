@@ -1,0 +1,31 @@
+<!-- admin/add.html -->
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block content %}
+<div id="content-main">
+    <form action="" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div>
+            <fieldset class="module aligned">
+                {% for field in form %}
+                <div class="form-row">
+                    <div class="fieldBox field-{{ field.name }}">
+                        {{ field.errors }}
+                        <label class="required" for="{{ field.id_for_label }}">{{ field.label }}:</label>
+                        {{ field }}
+                        {% if field.help_text %}
+                        <div class="help">{{ field.help_text|safe }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </fieldset>
+            
+            <div class="submit-row">
+                <input type="submit" value="{% trans 'Import file' %}" class="default" name="_import_file>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
