@@ -9,93 +9,106 @@
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50">
-  <div class="flex min-h-full flex-col justify-center px-6 py-12 lg:px-8">
+<body style="height: 100vh;
+             background: linear-gradient(144deg, rgba(255,255,255,1) 0%, rgba(171,174,199,1) 100%);">
+  <div class="flex min-h-full flex-col justify-start pt-12 px-6 lg:px-8">
+    <!-- Center a max-width card -->
     <div class="sm:mx-auto sm:w-full sm:max-w-sm">
-      <img
-        class="mx-auto h-20 w-auto"
-        src="{% static 'assets/rma_logo_header.png' %}"
-        alt="RMA Logo"
-      >
-      <h2 class="mt-10 text-center text-2xl font-bold tracking-tight text-gray-900">
-        Sign in to your account
-      </h2>
-    </div>
-
-    <div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-      <form class="space-y-6" method="post" novalidate>
-        {% csrf_token %}
-
-        {% if form.non_field_errors %}
-          <div class="text-red-600 text-sm">
-            {{ form.non_field_errors|join:" " }}
-          </div>
-        {% endif %}
-
-        <div>
-          <label for="{{ form.username.id_for_label }}" class="block text-sm font-medium text-gray-900">
-            Username
-          </label>
-          <div class="mt-2">
-            <input
-              type="text"
-              name="{{ form.username.html_name }}"
-              id="{{ form.username.id_for_label }}"
-              value="{{ form.username.value|default_if_none:'' }}"
-              autocomplete="username"
-              required
-              class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900
-                     ring-1 ring-gray-300 placeholder-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
-            >
-            {% if form.username.errors %}
-              <p class="mt-2 text-sm text-red-600">
-                {{ form.username.errors|join:", " }}
-              </p>
-            {% endif %}
-          </div>
+      <!-- Card wrapper -->
+      <div class="bg-white rounded-xl p-8"
+           style="box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px;">
+        
+        <!-- Logo + title -->
+        <div class="text-center">
+          <img
+            class="mx-auto h-20 w-auto"
+            src="{% static 'assets/rma_logo_header.png' %}"
+            alt="RMA Logo"
+          >
+          <h2 class="mt-6 text-center text-2xl font-bold text-gray-900">
+            Sign in
+          </h2>
         </div>
 
-        <div>
-          <div class="flex items-center justify-between">
-            <label for="{{ form.password.id_for_label }}" class="block text-sm font-medium text-gray-900">
-              Password
+        <!-- Form -->
+        <form class="mt-8 space-y-6" method="post" novalidate>
+          {% csrf_token %}
+          {% if form.non_field_errors %}
+            <div class="text-red-600 text-sm">
+              {{ form.non_field_errors|join:" " }}
+            </div>
+          {% endif %}
+
+          <!-- Username -->
+          <div>
+            <label for="{{ form.username.id_for_label }}" class="block text-sm font-medium text-gray-900">
+              Username
             </label>
-            <div class="text-sm">
-              <a href="{% url 'password_reset' %}" class="font-semibold text-indigo-600 hover:text-indigo-500">
-                Forgot password?
-              </a>
+            <div class="mt-1">
+              <input
+                type="text"
+                name="{{ form.username.html_name }}"
+                id="{{ form.username.id_for_label }}"
+                value="{{ form.username.value|default_if_none:'' }}"
+                autocomplete="username"
+                required
+                class="block w-full rounded-md bg-white px-3 py-2 text-base text-gray-900
+                       ring-1 ring-gray-300 placeholder-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
+              >
+              {% if form.username.errors %}
+                <p class="mt-2 text-sm text-red-600">
+                  {{ form.username.errors|join:", " }}
+                </p>
+              {% endif %}
             </div>
           </div>
-          <div class="mt-2">
-            <input
-              type="password"
-              name="{{ form.password.html_name }}"
-              id="{{ form.password.id_for_label }}"
-              autocomplete="current-password"
-              required
-              class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900
-                     ring-1 ring-gray-300 placeholder-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
-            >
-            {% if form.password.errors %}
-              <p class="mt-2 text-sm text-red-600">
-                {{ form.password.errors|join:", " }}
-              </p>
-            {% endif %}
-          </div>
-        </div>
 
-        <div>
-          <button
-            type="submit"
-            class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5
-                   text-sm font-semibold text-white shadow-sm hover:bg-indigo-500
-                   focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-600"
-          >
-            Sign in
-          </button>
-        </div>
-      </form>
+          <!-- Password -->
+          <div>
+            <div class="flex items-center justify-between">
+              <label for="{{ form.password.id_for_label }}" class="block text-sm font-medium text-gray-900">
+                Password
+              </label>
+              <div class="text-sm">
+                <a href="{% url 'password_reset' %}"
+                   class="font-semibold text-indigo-600 hover:text-indigo-500">
+                  Forgot password?
+                </a>
+              </div>
+            </div>
+            <div class="mt-1">
+              <input
+                type="password"
+                name="{{ form.password.html_name }}"
+                id="{{ form.password.id_for_label }}"
+                autocomplete="current-password"
+                required
+                class="block w-full rounded-md bg-white px-3 py-2 text-base text-gray-900
+                       ring-1 ring-gray-300 placeholder-gray-400 focus:ring-2 focus:ring-indigo-600 sm:text-sm"
+              >
+              {% if form.password.errors %}
+                <p class="mt-2 text-sm text-red-600">
+                  {{ form.password.errors|join:", " }}
+                </p>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div>
+            <button
+              type="submit"
+              class="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2
+                     text-sm font-semibold text-white shadow-sm hover:bg-indigo-500
+                     focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-600"
+            >
+              Sign in
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </body>
+
 </html>

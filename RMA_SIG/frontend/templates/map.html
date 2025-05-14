@@ -2,6 +2,15 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block head %}
+  {{ block.super }}
+  <!-- pull in the map's frontend CSS -->
+  <link
+    rel="stylesheet"
+    href="{% static 'frontend_css/style.css' %}"
+  />
+{% endblock %}
+
 {% block title %}Map — RMA SIG{% endblock %}
 
 {% block scripts %}
