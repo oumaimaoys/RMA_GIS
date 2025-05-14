@@ -302,7 +302,7 @@ class CompetitorAdmin(BaseModelAdmin):
 
 @admin.register(PopulationArea)
 class PopulationAreaAdmin(BaseModelAdmin):
-    list_display = ('name', 'total_population', 'total_vihicules', 'date_updated')
+    list_display = ('name', 'total_population', 'estimated_vehicles')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/PopulationArea/change_form.html"

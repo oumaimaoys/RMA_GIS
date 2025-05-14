@@ -75,16 +75,19 @@ class Competitor(models.Model):
         return self.company_name
 
 class PopulationArea(models.Model):
-    """Population data by commune"""
+    """Population data by commune."""
     name = models.CharField(max_length=255)
     boundary = models.MultiPolygonField(srid=4326)
     total_population = models.IntegerField()
-    total_vihicules = models.IntegerField()
-    date_updated = models.DateField(help_text="Date this population data was updated")
-    
-    
+    estimated_vehicles = models.IntegerField(editable=False)
+
+    def save(self, *args, **kwargs):
+        # recalc before saving
+        self.estimated_vehicles = int(self.total_population * 0.1147)
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"{self.name}"
+        return self.name
     
 class LossExperience(models.Model): # sinistralité
     area = models.ForeignKey(PopulationArea, on_delete=models.CASCADE)

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Home – RMA Network GIS{% endblock %}
+
+{% block content %}
+  <!-- HEADER -->
+  <header class="bg-primary text-white text-center py-5">
+    <div class="container">
+      <h1 class="display-5">Welcome to the RMA Network GIS</h1>
+      <p class="lead">Analyze coverage and plan new agencies with confidence.</p>
+    </div>
+  </header>
+
+  <!-- MAIN BODY -->
+  <section class="container my-5">
+    <div class="card mx-auto" style="max-width: 20rem;">
+      <img 
+        src="{% static 'assets/map_icon.png' %}" 
+        class="card-img-top" 
+        alt="Map thumbnail">
+      <div class="card-body text-center">
+        <h5 class="card-title">Interactive Map</h5>
+        <p class="card-text">Click below to explore agency locations and scores.</p>
+        <a href="{% url 'map' %}" class="btn btn-primary">Go to Map</a>
+      </div>
+    </div>
+  </section>
+{% endblock %}
