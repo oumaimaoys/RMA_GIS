@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, PopulationArea, CoverageScore
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -12,6 +12,8 @@ from django.contrib.gis.db import models
 from django.contrib import admin
 from django.utils.html import format_html
 from datetime import datetime
+import json
+from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
 
 class CsvImportForm(forms.Form):
     csv_file = forms.FileField()
@@ -300,62 +302,207 @@ class CompetitorAdmin(BaseModelAdmin):
 
 
 
-@admin.register(PopulationArea)
-class PopulationAreaAdmin(BaseModelAdmin):
-    list_display = ('name', 'total_population', 'estimated_vehicles')
+@admin.register(Commune)
+class CommuneAdmin(admin.ModelAdmin):
+    list_display = ('name', 'population')
     search_fields = ('name',)
 
-    add_form_template = "admin/spatial_data/PopulationArea/change_form.html"
+    add_form_template = "admin/spatial_data/Commune/change_form.html"
     change_form_template = add_form_template
-    
 
-    def process_excel_import(self, request):
-        f = request.FILES.get('excel_file')
+    def process_geojson_import(self, request):
+        f = request.FILES.get('geojson_file')
         if not f:
-            messages.error(request, "Please choose an Excel file.")
+            messages.error(request, "Please choose a GeoJSON file.")
             return False
 
         try:
-            df = pd.read_excel(f)
-            required = ["Collectivités territoriales", "Population"]
-
-            missing = [h for h in required if h not in df.columns]
-            if missing:
-                messages.error(request, f"Missing columns: {', '.join(missing)}")
+            data = json.load(f)
+            features = data.get('features', [])
+            if not features:
+                messages.error(request, "No features found in the GeoJSON.")
                 return False
 
             imported = 0
-            for i, row in df.iterrows():
+            skipped = 0
+            errors = 0
+            
+            # Collect error messages to report later
+            error_messages = []
+            
+            for idx, feature in enumerate(features, start=1):
+                props = feature.get('properties', {})
+                geom_dict = feature.get('geometry')
+                name = props.get('Nom_Commun')
+                population_2004 = props.get('Pop2004')
+                population = props.get('Population')
+
+                # Check for required fields
+                if not name:
+                    error_messages.append(f"Feature {idx}: missing 'Nom_Commun'")
+                    errors += 1
+                    continue
+                
+                # Fix the population logic - this was causing the issue
+                if population is None:
+                    if population_2004 is not None:
+                        population = population_2004
+                    else:
+                        # Default population value if both are missing
+                        population = 0
+                
+                if not geom_dict:
+                    error_messages.append(f"Feature {idx}: missing geometry")
+                    errors += 1
+                    continue
+
                 try:
-                    PopulationArea.objects.create(
-                        province_name=row['Collectivités territoriales'],
-                        population=row['Population'],
-            )
+                    # Build a GEOS geometry from the GeoJSON geometry dict
+                    geom = GEOSGeometry(json.dumps(geom_dict))
+                    
+                    # Validate geometry
+                    if not geom.valid:
+                        # Try to make it valid
+                        try:
+                            geom = geom.buffer(0)
+                            if not geom.valid:
+                                error_messages.append(f"Feature {idx}: invalid geometry and couldn't repair")
+                                errors += 1
+                                continue
+                        except Exception as e:
+                            error_messages.append(f"Feature {idx}: couldn't repair invalid geometry: {e}")
+                            errors += 1
+                            continue
+                    
+                    # If it's a Polygon, wrap it in a MultiPolygon
+                    if geom.geom_type == 'Polygon':
+                        geom = MultiPolygon(geom)
+                    elif geom.geom_type != 'MultiPolygon':
+                        error_messages.append(f"Feature {idx}: unexpected geometry type {geom.geom_type}")
+                        errors += 1
+                        continue
+
+                    # Check if commune with this name already exists
+                    if Commune.objects.filter(name=name).exists():
+                        skipped += 1
+                        continue
+
+                    # Create the commune
+                    Commune.objects.create(
+                        name=name,
+                        population=population,
+                        boundary=geom
+                    )
                     imported += 1
                 except Exception as e:
-                    messages.error(request, f"Row {i+1}: {e}")
+                    error_messages.append(f"Feature {idx}: {e}")
+                    errors += 1
 
-            if imported:
-                messages.success(request, f"Imported {imported} rows")
-            else:
-                messages.warning(request, "No rows were imported")
+            # Show summary message
+            if imported > 0:
+                messages.success(request, f"Imported {imported} communes successfully.")
+            if skipped > 0:
+                messages.warning(request, f"Skipped {skipped} communes (already exist).")
+            if errors > 0:
+                messages.error(request, f"Failed to import {errors} communes.")
+                
+            # Show detailed error messages (limit to first 20 to avoid flooding the admin)
+            for msg in error_messages[:20]:
+                messages.error(request, msg)
+                
+            if len(error_messages) > 20:
+                messages.error(request, f"... and {len(error_messages) - 20} more errors (not shown)")
+                
             return imported > 0
 
         except Exception as e:
-            messages.error(request, f"Error processing file: {e}")
+            messages.error(request, f"Error processing GeoJSON: {e}")
+            import traceback
+            messages.error(request, traceback.format_exc())
             return False
 
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
         if request.method == 'POST' and '_import_file' in request.POST:
-            self.process_excel_import(request)
+            self.process_geojson_import(request)
             return HttpResponseRedirect(request.path)
         return super().changeform_view(request, object_id, form_url, extra_context)
 
+    
+@admin.register(Province)
+class ProvinceAdmin(admin.ModelAdmin):
+    list_display = ('name', 'population')
+    search_fields = ('name',)
+
+    add_form_template = "admin/spatial_data/Province/change_form.html"
+    change_form_template = add_form_template
+
+    def process_geojson_import(self, request):
+        f = request.FILES.get('geojson_file')
+        if not f:
+            messages.error(request, "Please choose a GeoJSON file.")
+            return False
+
+        try:
+            data = json.load(f)
+            features = data.get('features', [])
+            if not features:
+                messages.error(request, "No features found in the GeoJSON.")
+                return False
+
+            imported = 0
+            for idx, feature in enumerate(features, start=1):
+                props = feature.get('properties', {})
+                geom_dict = feature.get('geometry')
+                name = props.get('shapeName')
+                population = props.get('population')
+
+                if not name:
+                    messages.error(
+                        request,
+                        f"Feature {idx}: missing 'Nom_commun'."
+                    )
+                    continue
+                if not population:
+                    messages.error(
+                        request,
+                        f"Feature {idx}: missing 'population'."
+                    )
+                    continue
+                if not geom_dict:
+                    messages.error(
+                        request,
+                        f"Feature {idx}: missing geometry"
+                    )
+                    continue
 
 
-@admin.register(CoverageScore)
-class CoverageScoreAdmin(admin.ModelAdmin):
-    list_display = ('area', 'score', 'coverage_percentage', 'population_covered', 'calculation_date')
-    list_filter = ('calculation_date',)
+                try:
+                    # Build a GEOS geometry from the GeoJSON geometry dict
+                    geom = GEOSGeometry(json.dumps(geom_dict))
+                    # If it's a Polygon, wrap it in a MultiPolygon
+                    if geom.geom_type == 'Polygon':
+                        geom = MultiPolygon(geom)
+                    Province.objects.create(
+                        name=name,
+                        population=population,
+                        boundary=geom,
+                    )
+                    imported += 1
+                except Exception as e:
+                    messages.error(request, f"Feature {idx}: {e}")
 
-    change_list_template = "admin/import_change_list.html"
+            if imported:
+                messages.success(request, f"Imported {imported} features.")
+            else:
+                messages.warning(request, "No features were imported.")
+            return imported > 0
+
+        except Exception as e:
+            messages.error(request, f"Error processing GeoJSON: {e}")
+            return False
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if request.method == 'POST' and '_import_file' in request.POST:
+            self.process_geojson_import(request)
+            return HttpResponseRedirect(request.path)
+        return super().changeform_view(request, object_id, form_url, extra_context)

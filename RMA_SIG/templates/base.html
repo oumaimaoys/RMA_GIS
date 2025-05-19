@@ -30,42 +30,21 @@
 <body>
 
   <!-- NAVBAR (shared, always collapsed) -->
-  <nav class="navbar navbar-light bg-light">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="{% url 'home' %}">RMA GIS</a>
-      <button
-        class="navbar-toggler"
-        type="button"
-        data-bs-toggle="collapse"
-        data-bs-target="#navContent"
-        aria-controls="navContent"
-        aria-expanded="false"
-        aria-label="Toggle navigation"
-      >
-        <span class="navbar-toggler-icon"></span>
-      </button>
+  <nav>
+    <ul class="sidebar">
+      <li onclick=hideSidebar()><a href="#"><svg xmlns="http://www.w3.org/2000/svg" height="26" viewBox="0 96 960 960" width="26"><path d="m249 849-42-42 231-231-231-231 42-42 231 231 231-231 42 42-231 231 231 231-42 42-231-231-231 231Z"/></svg></a></li>
+      <li><a href="{% url 'home'%}">home</a></li>
+      <li><a href="{% url 'map'%}">map</a></li>
+      <li><a href="{% url 'logout'%}">logout</a></li>
 
-      <!-- This will always be collapsed until you click the toggler -->
-      <div class="collapse navbar-collapse justify-content-end" id="navContent">
-        <ul class="navbar-nav mb-2 mb-lg-0">
-          <li class="nav-item">
-            <a
-              class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}"
-              href="{% url 'home' %}"
-            >Home</a>
-          </li>
-          <li class="nav-item">
-            <a
-              class="nav-link {% if request.resolver_match.url_name == 'map' %}active{% endif %}"
-              href="{% url 'map' %}"
-            >Map</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{% url 'logout' %}">Logout</a>
-          </li>
-        </ul>
-      </div>
-    </div>
+    </ul>
+    <ul>
+      <li><a href="{% url 'home'%}">RMA SIG</a></li>
+      <li class="hideOnMobile"><a href="{% url 'home'%}">home</a></li>
+      <li class="hideOnMobile"><a href="{% url 'map'%}">map</a></li>
+      <li class="hideOnMobile"><a href="{% url 'logout'%}">logout</a></li>
+      <li class="menu-button" onclick=showSidebar()><a href="#"><svg xmlns="http://www.w3.org/2000/svg" height="26" viewBox="0 96 960 960" width="26"><path d="M120 816v-60h720v60H120Zm0-210v-60h720v60H120Zm0-210v-60h720v60H120Z"/></svg></a></li>
+    </ul>
   </nav>
 
   <!-- Main content -->
@@ -82,6 +61,18 @@
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   ></script>
+
+  <script>
+    function showSidebar(){
+      const sidebar = document.querySelector('.sidebar')
+      sidebar.style.display = 'flex'
+    }
+    function hideSidebar(){
+      const sidebar = document.querySelector('.sidebar')
+      sidebar.style.display = 'none'
+    }
+  </script>
+
 
   {# allow child templates to inject extra scripts #}
   {% block scripts %}{% endblock %}

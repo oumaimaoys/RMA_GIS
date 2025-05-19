@@ -1,6 +1,9 @@
+# spatial_data/urls.py
+
 from django.urls import path
-from . import views  # Import your views module
+from . import views
 
 urlpatterns = [
-    # Your existing URL patterns
+    path("api/provinces.geojson", views.provinces_geojson, name="provinces-geojson"),
+    path("api/communes.geojson",  views.communes_geojson,  name="communes-geojson"),
 ]

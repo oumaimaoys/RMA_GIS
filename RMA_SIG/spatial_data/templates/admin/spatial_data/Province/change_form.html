@@ -1,0 +1,108 @@
+{# templates/admin/add.html #}
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+  {% if not object_id %}
+  <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
+    <h2>{% trans "Import GeoJSON File" %}</h2>
+    <form method="post" enctype="multipart/form-data" id="import-form">
+      {% csrf_token %}
+      <div>
+        <label for="id_geojson_file">{% trans "Choose a GeoJSON file:" %}</label>
+        <input
+          type="file"
+          name="geojson_file"
+          id="id_geojson_file"
+          accept=".geojson,application/geo+json"
+          required
+        >
+        <div class="help-text" style="margin-top: .5em;">
+          <p><strong>{% trans "Required properties in the GeoJSON features:" %}</strong></p>
+          <ul>
+            <li><code>properties.Nom_Commun</code></li>
+            <li><code>properties.Population</code></li>
+            <li><code>geometry.coordinates</code> (valid Point, Polygon, or MultiPolygon)</li>
+          </ul>
+        </div>
+        <input
+          type="submit"
+          name="_import_file"
+          value="{% trans 'Import' %}"
+          id="import-button"
+          class="default"
+          style="margin-top: 1em;"
+        >
+      </div>
+
+      <div style="margin-top: 10px;">
+        <progress id="import-progress" style="width: 100%; display: none;"></progress>
+        <p id="import-status" style="margin-top: 5px;"></p>
+      </div>
+    </form>
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('import-form');
+    const progress = document.getElementById('import-progress');
+    const status   = document.getElementById('import-status');
+    const fileInput = document.getElementById('id_geojson_file');
+    const importButton = document.getElementById('import-button');
+
+    form.addEventListener('submit', function(e) {
+      if (e.submitter === importButton) {
+        if (!fileInput.files.length) {
+          e.preventDefault();
+          status.textContent = '{% trans "Please select a file first." %}';
+          return;
+        }
+
+        const file = fileInput.files[0];
+        status.textContent = '{% trans "Reading file..." %}';
+        progress.style.display = 'block';
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          try {
+            const data = JSON.parse(event.target.result);
+            const features = data.features || [];
+
+            if (features.length === 0) {
+              status.textContent = '{% trans "No features found in the GeoJSON file." %}';
+              e.preventDefault();
+              return;
+            }
+
+            progress.max = features.length;
+            progress.value = 0;
+            status.textContent = `{% trans "Processing" %} 0 {% trans "of" %} ${features.length} {% trans "features..." %}`;
+
+            // let server handle the actual import
+          } catch (error) {
+            status.textContent = '{% trans "Error reading file:" %} ' + error.message;
+            e.preventDefault();
+          }
+        };
+        reader.onerror = function() {
+          status.textContent = '{% trans "Error reading file." %}';
+          e.preventDefault();
+        };
+        reader.readAsText(file);
+
+        let progressValue = 0;
+        const interval = setInterval(function() {
+          if (progressValue < progress.max) {
+            progressValue += Math.min(5, Math.ceil(progress.max / 100));
+            progress.value = Math.min(progressValue, progress.max - 1);
+            status.textContent = `{% trans "Processing" %} ${progress.value} {% trans "of" %} ${progress.max} {% trans "features..." %}`;
+          } else {
+            clearInterval(interval);
+          }
+        }, 200);
+      }
+    });
+  });
+  </script>
+  {% endif %}
+{% endblock %}

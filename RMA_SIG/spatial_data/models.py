@@ -59,9 +59,6 @@ class Competitor(models.Model):
     code_ACAPS = models.CharField(max_length=50, unique=True)
     company_name = models.CharField(max_length=255)
     mandante = models.CharField(max_length=255)
-    #market_share = models.FloatField(null=True, blank=True, 
-    #   help_text="Estimated market share percentage",
-    #   validators=[MinValueValidator(0), MaxValueValidator(100)])
     competitor_type = models.CharField(max_length=50, choices=[
         ('AGENT', 'agent'),
         ('BGD', 'bgd'),
@@ -74,45 +71,39 @@ class Competitor(models.Model):
     def __str__(self):
         return self.company_name
 
-class PopulationArea(models.Model):
-    """Population data by commune."""
-    name = models.CharField(max_length=255)
-    boundary = models.MultiPolygonField(srid=4326)
-    total_population = models.IntegerField()
-    estimated_vehicles = models.IntegerField(editable=False)
+class Area(models.Model):
+    """Population data by area."""
+    name = models.CharField(max_length=255, serialize=True)
+    boundary = models.MultiPolygonField(srid=4326, serialize=True)
+    population = models.IntegerField(serialize=True)
+    estimated_vehicles = models.IntegerField(editable=False, serialize=True)
 
     def save(self, *args, **kwargs):
         # recalc before saving
-        self.estimated_vehicles = int(self.total_population * 0.1147)
+        self.estimated_vehicles = int(self.population * 0.1147)
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
     
+class Commune(Area):
+    pass
+class Province(Area):
+    pass
+    
 class LossExperience(models.Model): # sinistralité
-    area = models.ForeignKey(PopulationArea, on_delete=models.CASCADE)
+    area = models.ForeignKey(Area, on_delete=models.CASCADE)
     loss_experience_rate = models.FloatField()
 
 
 class CoverageScore(models.Model):
     """Scoring system for network coverage"""
-    area = models.ForeignKey(PopulationArea, on_delete=models.CASCADE, related_name='coverage_scores')
+    area = models.ForeignKey(Area, on_delete=models.CASCADE, related_name='coverage_scores')
     score = models.FloatField(validators=[MinValueValidator(0), MaxValueValidator(100)],
                              help_text="Coverage score (0-100)")
-    population_covered = models.IntegerField(help_text="Estimated population covered by RMA network")
-    coverage_percentage = models.FloatField(validators=[MinValueValidator(0), MaxValueValidator(100)],
-                                         help_text="Percentage of population covered")
-    nearest_office = models.ForeignKey(RMAOffice, on_delete=models.SET_NULL, null=True, 
-                                      related_name='primary_coverage_areas')
+    
     calculation_date = models.DateTimeField(auto_now=True)
     
-    # Additional scoring factors
-    competitor_factor = models.FloatField(default=0, 
-        help_text="Impact of competitors on the score (-10 to +10)",
-        validators=[MinValueValidator(-10), MaxValueValidator(10)])
-    bank_partnership_factor = models.FloatField(default=0, 
-        help_text="Impact of bank partnerships on the score (0 to +20)",
-        validators=[MinValueValidator(0), MaxValueValidator(20)])
     
     class Meta:
         unique_together = ('area', 'calculation_date')
