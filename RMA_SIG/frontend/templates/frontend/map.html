@@ -25,9 +25,11 @@
   </div>
 </div>
 
-<div id="info-card" style="display: none;">
+<div id="info-card" style="display: none; min-width: fit-content;">
   <h3 id="region-name"></h3>
   <p><strong>Population:</strong> <span id="region-population"></span></p>
+  <p><strong>Population assurable:</strong> <span id="region-insured-population"></span></p>
+  <p><strong>Nombre de vehicules estimées:</strong> <span id="region-vehicules"></span></p>
   <!-- Add more fields here as needed -->
 </div>
   
@@ -173,9 +175,14 @@
       const props = feature.properties;
       let name = props.name || "Inconnu";
       let pop  = props.population;
+      let pop_insured = props.insured_population;
+      let vehicles = props.estimated_vehicles
 
       document.getElementById("region-name").textContent = name;
       document.getElementById("region-population").textContent = pop ? pop.toLocaleString() : "Donnée non disponible";
+      document.getElementById("region-insured-population").textContent = pop_insured ? pop_insured.toLocaleString() : "Donnée non disponible";
+      document.getElementById("region-vehicules").textContent = vehicles ? vehicles.toLocaleString() : "Donnée non disponible";
+
 
       document.getElementById("info-card").style.display = "block";
     }

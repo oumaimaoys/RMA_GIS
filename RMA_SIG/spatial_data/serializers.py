@@ -6,19 +6,19 @@ class AreaSerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Area
         geo_field = "boundary"
-        fields = ('id', 'name', 'population', 'estimated_vehicles')
+        fields = ('id', 'name', 'population', 'insured_population','estimated_vehicles')
 
 class ProvinceSerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Province
         geo_field = "boundary"
-        fields = ('id', 'name', 'population', 'estimated_vehicles')
+        fields = ('id', 'name', 'population','insured_population', 'estimated_vehicles')
 
 class CommuneSerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Commune
         geo_field = "boundary"
-        fields = ('id', 'name', 'population', 'estimated_vehicles')
+        fields = ('id', 'name', 'population', 'insured_population', 'estimated_vehicles')
 
 class CompetitorSerializer(GeoFeatureModelSerializer):
     class Meta:
