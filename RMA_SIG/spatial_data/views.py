@@ -1,8 +1,8 @@
 from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Province, Commune
-from .serializers import ProvinceSerializer, CommuneSerializer
+from .models import Province, Commune, RMAOffice, Competitor
+from .serializers import ProvinceSerializer, CommuneSerializer, CompetitorSerializer, RMAOfficeSerializer
 
 @api_view(['GET'])
 def provinces_geojson(request):
@@ -16,14 +16,24 @@ def communes_geojson(request):
     serializer = CommuneSerializer(qs, many=True)
     return Response(serializer.data)
 
-# If you still want to use Django's built-in serializer, keep this function as an alternative
-def provinces_geojson_django(request):
-    from django.core.serializers import serialize
-    qs = Province.objects.all()
-    geojson = serialize(
-        "geojson", 
-        qs,
-        geometry_field="boundary",
-        fields=("name", "population", "estimated_vehicles"),
-    )
-    return HttpResponse(geojson, content_type="application/json")
+@api_view(['GET'])
+def acaps_data_geojson(request):
+    """
+    Returns a single GeoJSON FeatureCollection combining
+    all Competitor and RMAOffice records.
+    """
+    comps = Competitor.objects.all()
+    rmas  = RMAOffice.objects.all()
+
+    comp_ser = CompetitorSerializer(comps, many=True)
+    rma_ser  = RMAOfficeSerializer(rmas, many=True)
+
+    # Each serializer.data is already a GeoJSON Feature
+    features = comp_ser.data + rma_ser.data
+
+    return Response({
+        "type": "FeatureCollection",
+        "features": features
+    })
+
+

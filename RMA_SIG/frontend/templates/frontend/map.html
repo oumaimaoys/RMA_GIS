@@ -193,7 +193,7 @@
         }
 
         if (feature.properties) {
-          const name = feature.properties.shapeName || feature.properties.Nom_Commun || 'Inconnu';
+          const name = feature.properties.name || 'Inconnu';
 
           layer.bindTooltip(
             `<strong>${name}</strong>`,

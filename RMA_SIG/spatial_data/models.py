@@ -1,6 +1,7 @@
 from django.contrib.gis.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+
 # models
 
 class RMAOffice(models.Model):
@@ -76,11 +77,13 @@ class Area(models.Model):
     name = models.CharField(max_length=255, serialize=True)
     boundary = models.MultiPolygonField(srid=4326, serialize=True)
     population = models.IntegerField(serialize=True)
-    estimated_vehicles = models.IntegerField(editable=False, serialize=True)
+    insured_population = models.IntegerField(default=0, editable=False, serialize=True)
+    estimated_vehicles = models.IntegerField(default=0, editable=False, serialize=True)
 
     def save(self, *args, **kwargs):
         # recalc before saving
         self.estimated_vehicles = int(self.population * 0.1147)
+        self.insured_population = int(self.population * 0.17)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -91,9 +94,11 @@ class Commune(Area):
 class Province(Area):
     pass
     
-class LossExperience(models.Model): # sinistralité
-    area = models.ForeignKey(Area, on_delete=models.CASCADE)
-    loss_experience_rate = models.FloatField()
+class LossRatio(models.Model): # sinistralité
+    province = models.ForeignKey(Province, on_delete=models.CASCADE)
+    commune = models.ForeignKey(Commune, on_delete=models.CASCADE)
+    RMA_office = models.ForeignKey(RMAOffice, on_delete=models.CASCADE)
+    loss_ratio = models.FloatField(default=0)
 
 
 class CoverageScore(models.Model):

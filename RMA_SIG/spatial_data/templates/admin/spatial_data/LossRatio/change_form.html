@@ -1,0 +1,64 @@
+{# templates/admin/add.html #}
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+  {% if not object_id %}
+  <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
+    <h2>{% trans "Import Excel File" %}</h2>
+    <form method="post" enctype="multipart/form-data" id="import-form">
+      {% csrf_token %}
+      <div>
+        <label for="id_excel_file">{% trans "Choose an Excel file:" %}</label>
+        <input
+          type="file"
+          name="excel_file"
+          id="id_excel_file"
+          accept=".xlsx, .xls"
+          required
+        >
+        <input
+          type="submit"
+          name="_import_file"
+          value="{% trans 'Import' %}"
+          id="import-button"
+          class="default"
+          style="margin-top: 1em;"
+        >
+      </div>
+
+      <div style="margin-top: 10px;">
+        <progress id="import-progress" max="100" style="width: 100%; display: none;"></progress>
+        <p id="import-status" style="margin-top: 5px;"></p>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('import-form');
+      const fileInput = document.getElementById('id_excel_file');
+      const importButton = document.getElementById('import-button');
+      const progress = document.getElementById('import-progress');
+      const status   = document.getElementById('import-status');
+
+      form.addEventListener('submit', function(e) {
+        if (e.submitter === importButton) {
+          if (!fileInput.files.length) {
+            e.preventDefault();
+            status.textContent = '{% trans "Please select an Excel file first." %}';
+            return;
+          }
+
+          // Show a simple, indeterminate progress bar
+          status.textContent = '{% trans "Processing file..." %}';
+          progress.style.display = 'block';
+          progress.removeAttribute('value');
+
+          // Let the server handle the actual import
+        }
+      });
+    });
+  </script>
+  {% endif %}
+{% endblock %}

@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -13,7 +13,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from datetime import datetime
 import json
-from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
+from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Point
 
 class CsvImportForm(forms.Form):
     csv_file = forms.FileField()
@@ -60,7 +60,7 @@ class RMABGDAdmin(BaseModelAdmin):
             df.columns = df.columns.str.replace('\u200b', '', regex=False)
             print(list(df.columns))
 
-            required = ["Code RMA","Code ACAPS","Dénomination RMA","Ville",
+            required = ["Code RMA","CODE ACAPS","Dénomination RMA","Ville",
                         "Adresse","Longitude","Latitude","Type BGD",
                         "Partenaire","Date création","Etat BGD RMA"]
             missing = [h for h in required if h not in df.columns]
@@ -96,7 +96,7 @@ class RMABGDAdmin(BaseModelAdmin):
                             continue
                     
                     RMABGD.objects.create(
-                        code_ACAPS=row["Code ACAPS"],
+                        code_ACAPS=row["CODE ACAPS"],
                         code_RMA=row["Code RMA"],
                         name=row["Dénomination RMA"],
                         address=row["Adresse"],
@@ -149,7 +149,7 @@ class RMAAgentAdmin(BaseModelAdmin):
 
         try:
             df = pd.read_excel(f)
-            required = ["code RMA", "code ACAPS", "Dénomination RMA", "Ville", "Adresse", "Longitude", "Latitude"]
+            required = ["Code RMA-Agent", "Code ACAPS", "Agence", "ville", "Adresse de l'agence", "Longitude", "Latitude"]
 
             missing = [h for h in required if h not in df.columns]
             if missing:
@@ -160,11 +160,11 @@ class RMAAgentAdmin(BaseModelAdmin):
             for i, row in df.iterrows():
                 try:
                     RMAAgent.objects.create(
-                        code_ACAPS = row["code ACAPS"],
-                        code_RMA = row["code RMA"],
-                        name = row["Dénomination RMA"],
-                        address = row["Adresse"],
-                        city = row["Ville"],
+                        code_ACAPS = row["Code ACAPS"],
+                        code_RMA = row["Code RMA-Agent"],
+                        name = row["Agence"],
+                        address = row["Adresse de l'agence"],
+                        city = row["ville"],
                         location = f'POINT({row["Longitude"]} {row["Latitude"]})',
             )
                     imported += 1
@@ -304,7 +304,7 @@ class CompetitorAdmin(BaseModelAdmin):
 
 @admin.register(Commune)
 class CommuneAdmin(admin.ModelAdmin):
-    list_display = ('name', 'population')
+    list_display = ('name', 'population',  'insured_population', 'estimated_vehicles')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/Commune/change_form.html"
@@ -430,7 +430,7 @@ class CommuneAdmin(admin.ModelAdmin):
     
 @admin.register(Province)
 class ProvinceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'population')
+    list_display = ('name', 'population', 'insured_population', 'estimated_vehicles')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/Province/change_form.html"
@@ -504,5 +504,126 @@ class ProvinceAdmin(admin.ModelAdmin):
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
         if request.method == 'POST' and '_import_file' in request.POST:
             self.process_geojson_import(request)
+            return HttpResponseRedirect(request.path)
+        return super().changeform_view(request, object_id, form_url, extra_context)
+    
+@admin.register(LossRatio)
+class LossRatioAdmin(admin.ModelAdmin):
+    list_display = ('province', 'commune', 'RMA_office', 'loss_ratio')
+    search_fields = ('province', 'commune', 'RMA_office',)
+    add_form_template = change_form_template = "admin/spatial_data/LossRatio/change_form.html"
+
+    def process_excel_import(self, request):
+        f = request.FILES.get('excel_file')
+        if not f:
+            messages.error(request, "Please choose an Excel file.")
+            return False
+
+        try:
+            # Read Excel file
+            print("DEBUG: Reading Excel file...")
+            df = pd.read_excel(f, header=1)
+            df.columns = (
+                df.columns
+                .str.strip()
+                .str.replace('\xa0',' ', regex=False)
+                .str.replace('\u200b','', regex=False)
+            )
+            df.columns = df.columns.str.replace(r'\s*\.\s*', '.', regex=True)
+            
+            # Verify expected columns exist
+            expected_cols = ["Réseau", "Code Inter", "Nom Inter", "Usage"]
+            missing = [col for col in expected_cols if col not in df.columns]
+            if missing:
+                messages.error(request, f"Missing required columns: {', '.join(missing)}")
+                return False
+                
+            # Rename columns for consistency
+            df = df.rename(columns={
+                "Prime"  : "Prime_2022",
+                "S/P"    : "SP_2022",
+                "Prime.1": "Prime_2023",
+                "S/P.1"  : "SP_2023",
+                "Prime.2": "Prime_2024",
+                "S/P.2"  : "SP_2024",
+                "Prime.3": "Prime_Total",
+                "S/P.3"  : "SP_Total",
+            })
+            
+            # Filter to only include totals
+            tots = df[df["Usage"].str.strip().eq("Total")]
+            out = tots[["Code Inter", "Nom Inter", "Prime_2024", "SP_2024"]].copy()
+            print(f"DEBUG: Found {len(out)} totals")
+
+            # Clean up SP_2024 values
+            def clean_sp(val):
+                if pd.isna(val):
+                    return None
+                s = str(val).strip()
+                if s.endswith('%'):
+                    # "80%" -> 0.8
+                    return float(s.rstrip('%')) / 100
+                else:
+                    # already a decimal or integer
+                    return float(s)
+
+            out["SP_2024"] = out["SP_2024"].apply(clean_sp)
+            print("DEBUG: cleaned SP_2024 dtype:", out["SP_2024"].dtype)
+            
+            # Import the data to the database
+            imported = errors = 0
+            for i, row in out.iterrows():
+                try:
+                    raw = row["Code Inter"]
+                    # -- normalize the code:
+                    if isinstance(raw, float):
+                        code_str = str(int(raw)) if raw.is_integer() else str(raw)
+                    else:
+                        code_str = str(raw).strip().rstrip('.').replace(' ', '')
+                    
+                    # -- lookup safely:
+                    office = RMAOffice.objects.filter(code_RMA__iexact=code_str).first()
+                    if not office:
+                        print(f"WARNING: no office for code `{code_str}`, skipping row {i+1}")
+                        errors += 1
+                        continue
+
+                    pt = office.location
+                    prov  = Province.objects.filter(boundary__contains=pt).first()
+                    comm  = Commune.objects.filter(boundary__contains=pt).first()
+                    loss_ratio = row["SP_2024"]
+                    if pd.isna(loss_ratio):
+                        print(f"WARNING: empty SP_2024 on row {i+1}, skipping")
+                        errors += 1
+                        continue
+
+                    obj, created = LossRatio.objects.update_or_create(
+                        RMA_office=office,
+                        defaults={'province': prov, 'commune': comm, 'loss_ratio': loss_ratio}
+                    )
+                    imported += 1
+                except Exception as e:
+                    print(f"ERROR: row {i+1} import failed:", e)
+                    messages.error(request, f"Row {i+1}: {e}")
+                    errors += 1
+
+
+            print(f"DEBUG: import complete, imported={imported}, errors={errors}")
+            if imported:
+                messages.success(request, f"Imported {imported} records.")
+                if errors:
+                    messages.warning(request, f"{errors} rows were skipped.")
+            else:
+                messages.warning(request, "No rows were imported.")
+
+            return imported > 0
+        except Exception as e:
+            print(f"ERROR: Import failed: {e}")
+            messages.error(request, f"Import failed: {e}")
+            return False
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if request.method == 'POST' and '_import_file' in request.POST:
+            self.process_excel_import(request)
             return HttpResponseRedirect(request.path)
         return super().changeform_view(request, object_id, form_url, extra_context)
