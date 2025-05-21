@@ -24,7 +24,7 @@ class CompetitorSerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Competitor
         geo_field = "location"
-        fields = ('id', 'code_ACAPS', 'company_name', 'mandante', 'competitor_type', 'adaress','city')
+        fields = ('id', 'code_ACAPS', 'company_name', 'mandante', 'competitor_type', 'address','city')
 
 
 class RMAOfficeSerializer(GeoFeatureModelSerializer):

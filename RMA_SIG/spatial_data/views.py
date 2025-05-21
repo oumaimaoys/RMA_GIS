@@ -17,23 +17,14 @@ def communes_geojson(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-def acaps_data_geojson(request):
-    """
-    Returns a single GeoJSON FeatureCollection combining
-    all Competitor and RMAOffice records.
-    """
+def competitor_geojson(request):
     comps = Competitor.objects.all()
-    rmas  = RMAOffice.objects.all()
-
     comp_ser = CompetitorSerializer(comps, many=True)
+    return Response(comp_ser.data)
+
+@api_view(['GET'])
+def rma_office_geojson(request):
+    rmas  = RMAOffice.objects.all()
     rma_ser  = RMAOfficeSerializer(rmas, many=True)
-
-    # Each serializer.data is already a GeoJSON Feature
-    features = comp_ser.data + rma_ser.data
-
-    return Response({
-        "type": "FeatureCollection",
-        "features": features
-    })
-
+    return Response(rma_ser.data)
 
