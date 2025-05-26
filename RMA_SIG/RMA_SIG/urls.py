@@ -34,6 +34,6 @@ urlpatterns = [
         name='home'
     ),
     path("map/", include("frontend.urls")),      # or point directly at frontend.views.map_view
-    path("spatial/", include("spatial_data.urls")),
+    path('spatial/', include('spatial_data.urls')),  # ✅ this must be present
 
 ]

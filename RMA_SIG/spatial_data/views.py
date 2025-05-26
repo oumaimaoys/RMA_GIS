@@ -32,14 +32,15 @@ def rma_office_geojson(request):
     return Response(rma_ser.data)
 
 
-
 @api_view(['POST'])
-@permission_classes([])  # You can use [IsAuthenticated] if needed
 def run_score_view(request):
-    try:
-        call_command('calculate_coverage_scores')
-        return Response({"message": "Score calculation triggered."}, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    print("🔥 Received POST to run-score")
+    print("Headers:", request.headers)
+    print("Body:", request.body)
 
+    try:
+        call_command('calculate_scores')
+        return Response({"message": "Score calculation triggered."}, status=200)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 

@@ -124,6 +124,4 @@ class CoverageScore(models.Model):
     
     class Meta:
         unique_together = ('area', 'calculation_date')
-    
-    def __str__(self):
-        return self.area
+   
