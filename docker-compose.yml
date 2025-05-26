@@ -80,6 +80,8 @@ services:
       retries: 3
       start_period: 5s
       timeout: 5s
+    networks:
+      - confluent
 
   django:
     build:
@@ -97,6 +99,8 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    networks:
+      - confluent
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
@@ -211,6 +215,7 @@ services:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./config:/opt/airflow/config
     networks:
       - confluent
 

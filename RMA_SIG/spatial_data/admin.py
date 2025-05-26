@@ -246,8 +246,8 @@ class BankAdmin(BaseModelAdmin):
 @admin.register(Competitor)
 class CompetitorAdmin(BaseModelAdmin):
     list_display = ('company_name', 'code_ACAPS', 'competitor_type', 'mandante', 'city')
-    list_filter = ('competitor_type', 'city')
-    search_fields = ('company_name', 'code_ACAPS', 'mandante', 'city')
+    list_filter = ('competitor_type', 'mandante')
+    search_fields = ('company_name', 'code_ACAPS', 'mandante', 'city',)
 
     add_form_template = "admin/spatial_data/Competitor/change_form.html"
     change_form_template = add_form_template
@@ -627,3 +627,9 @@ class LossRatioAdmin(admin.ModelAdmin):
             self.process_excel_import(request)
             return HttpResponseRedirect(request.path)
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+@admin.register(CoverageScore)
+class CoverageScoreAdmin(admin.ModelAdmin):
+    list_display = ('area', 'score', 'potential', "calculation_date")
+    list_filter = ('area', 'potential')
+    search_fields = ('area__name',)

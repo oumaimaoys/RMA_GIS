@@ -79,11 +79,18 @@ class Area(models.Model):
     population = models.IntegerField(serialize=True)
     insured_population = models.IntegerField(default=0, editable=False, serialize=True)
     estimated_vehicles = models.IntegerField(default=0, editable=False, serialize=True)
+    competition_count = models.IntegerField(default=0, editable=False, serialize=True)
+    bank_count = models.IntegerField(default=0, editable=False, serialize=True)
 
     def save(self, *args, **kwargs):
         # recalc before saving
         self.estimated_vehicles = int(self.population * 0.1147)
         self.insured_population = int(self.population * 0.17)
+
+        if self.boundary:
+            self.competition_count = Competitor.objects.filter(location__within=self.boundary).count()
+            self.bank_count = Bank.objects.filter(location__within=self.boundary).count()
+
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -106,6 +113,11 @@ class CoverageScore(models.Model):
     area = models.ForeignKey(Area, on_delete=models.CASCADE, related_name='coverage_scores')
     score = models.FloatField(validators=[MinValueValidator(0), MaxValueValidator(100)],
                              help_text="Coverage score (0-100)")
+    potential = models.CharField(max_length=50, choices=[
+        ('HIGH', 'High'),
+        ('MEDIUM', 'Medium'),
+        ('LOW', 'Low'),
+    ], help_text="Potential for coverage improvement", default='MEDIUM')
     
     calculation_date = models.DateTimeField(auto_now=True)
     

@@ -10,3 +10,4 @@ numpy
 gdal==3.6.2
 djangorestframework
 djangorestframework-gis
+apache-airflow

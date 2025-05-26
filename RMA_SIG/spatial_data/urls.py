@@ -8,6 +8,7 @@ urlpatterns = [
     path("api/communes.geojson",  views.communes_geojson,  name="communes-geojson"),
     path("api/competitor.geojson",  views.competitor_geojson,  name="competitor-geojson"),
     path("api/rma.geojson",  views.rma_office_geojson,  name="rma-geojson"),
+    path('api/run-score/', views.run_score_view, name='run-score'),
 
 
 ]

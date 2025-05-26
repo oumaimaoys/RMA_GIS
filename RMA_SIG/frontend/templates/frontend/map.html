@@ -96,25 +96,19 @@
   }
 
   // Count RMA agencies in each polygon (province/commune)
-  function countRmaAgencies(geojson, level = "province") {
-    if (!compData) return {};
+  function countRmaAgencies(geojson) {
+    if (!rmaData) return {};
     const counts = {};
     geojson.features.forEach((feature, idx) => {
       let count = 0;
-      compData.features.forEach(pt => {
-        if (pt.properties.mandante !== "Royale Marocaine D'assurance") return;
-        const [lng, lat] = pt.geometry.coordinates;
-        const point = [lng, lat];
-        const geom = feature.geometry;
-        if (geom.type === "Polygon" && pointInPolygon(point, geom.coordinates[0])) {
-          count++;
-        }
-        if (geom.type === "MultiPolygon" && geom.coordinates.some(poly => pointInPolygon(point, poly[0]))) {
-          count++;
-        }
+      const geom = feature.geometry;
+      rmaData.features.forEach(pt => {
+        const point = pt.geometry.coordinates;
+        if (geom.type === "Polygon" && pointInPolygon(point, geom.coordinates[0])) count++;
+        if (geom.type === "MultiPolygon" && geom.coordinates.some(poly => pointInPolygon(point, poly[0]))) count++;
       });
+      feature.properties.rma_count = count;
       counts[feature.properties.code || idx] = count;
-      feature.properties.rma_count = count; // Attach to feature for easy use
     });
     return counts;
   }
@@ -204,27 +198,24 @@
 
   // Show either all or only RMA agencies
   function loadAgenciesWithinRegion(regionFeature) {
-    if (!compData) return;
+    if (!compData || !rmaData) return;
     const regionGeometry = regionFeature.geometry;
-    const filtered =  compData.features.filter(feature => {
-      if (rmaOnlyActive && feature.properties.mandante !== "Royale Marocaine D'assurance") return false;
-      const [lng, lat] = feature.geometry.coordinates;
-      const point = [lng, lat];
-      if (regionGeometry.type === "Polygon") {
-        return pointInPolygon(point, regionGeometry.coordinates[0]);
-      } else if (regionGeometry.type === "MultiPolygon") {
-        return regionGeometry.coordinates.some(poly =>
-          pointInPolygon(point, poly[0])
-        );
-      }
+
+    function isInRegion(point) {
+      if (regionGeometry.type === "Polygon") return pointInPolygon(point, regionGeometry.coordinates[0]);
+      if (regionGeometry.type === "MultiPolygon") return regionGeometry.coordinates.some(poly => pointInPolygon(point, poly[0]));
       return false;
-    });
+    }
+
+    const rmaFiltered = rmaData.features.filter(f => isInRegion(f.geometry.coordinates));
+    const compFiltered = !rmaOnlyActive ? compData.features.filter(f => isInRegion(f.geometry.coordinates)) : [];
+    const combined = [...rmaFiltered, ...compFiltered];
 
     if (agencyLayer) map.removeLayer(agencyLayer);
 
-    agencyLayer = L.geoJSON({ type: "FeatureCollection", features: filtered }, {
+    agencyLayer = L.geoJSON({ type: "FeatureCollection", features: combined }, {
       pointToLayer: (feature, latlng) => {
-        const isRMA = feature.properties.mandante === "Royale Marocaine D'assurance";
+      const isRMA = feature.properties.name && feature.properties.address && feature.properties.city;
         return L.circleMarker(latlng, {
           radius: 6,
           fillColor: isRMA ? "#2980b9" : "#27ae60",
@@ -236,16 +227,24 @@
       },
       onEachFeature: (feature, layer) => {
         const props = feature.properties;
-        layer.bindPopup(`
-          <strong>${props.nom}</strong><br/>
-          <b>Qualité:</b> ${props.qualité}<br/>
-          <b>Mandante:</b> ${props.mandante}<br/>
-          <b>Adresse:</b> ${props.adresse}<br/>
-          <b>Localité:</b> ${props.localité}
-        `);
+        const isRMA = feature.properties.name && feature.properties.address && feature.properties.city;
+        if (isRMA) {
+          const name = props.name || "Agence RMA";
+          const address = props.address || "-";
+          const city = props.city || "-";
+          layer.bindPopup(`<strong>${name}</strong><br/><b>Adresse:</b> ${address}<br/><b>Ville:</b> ${city}`);
+        } else {
+          const name = props.company_name || "Agence";
+          const address = props.address || "-";
+          const city = props.city || "-";
+          const mandante = props.mandante || "-";
+          const competitor_type = props.competitor_type || "-";
+          layer.bindPopup(`<strong>${name}</strong><br/><b>Mandante:</b> ${mandante}<br/><b>Type:</b> ${competitor_type}<br/><b>Adresse:</b> ${address}<br/><b>Localité:</b> ${city}`);
+        }
       }
     }).addTo(map);
   }
+
 
   // Event for features
   function onEachFeature(feature, layer) {
