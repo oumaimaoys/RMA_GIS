@@ -29,6 +29,9 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'django']
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024  # 10MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024  # 10MB
+
 
 # Application definition
 

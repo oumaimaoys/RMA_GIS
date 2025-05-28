@@ -8,6 +8,14 @@ from .models import Province, Commune, RMAOffice, Competitor, CoverageScore, Los
 from django.db.models import Avg
 from django.db.models import Prefetch
 from .serializers import ProvinceSerializer, CommuneSerializer, CompetitorSerializer, RMAOfficeSerializer
+import base64, io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from rest_framework.decorators import api_view
+from rest_framework.parsers import JSONParser
+from django.http import FileResponse
+import json
+from django.http import JsonResponse
 
 @api_view(["GET"])
 def provinces_geojson(request):
@@ -62,17 +70,47 @@ def run_score_view(request):
     except Exception as e:
         return Response({"error": str(e)}, status=500)
 
-@api_view(['GET'])
-def area_metrics(request, pk):
-    area = Area.objects.get(pk=pk)
-    cov = area.coverage_scores.order_by('-calculation_date').first()
-    lr  = (LossRatio.objects.filter(commune=area) if hasattr(area,'commune') else
-           LossRatio.objects.filter(province=area) if hasattr(area,'province') else
-           LossRatio.objects.none()).aggregate(avg=Avg('loss_ratio'))['avg']
-    return Response({
-        "score":      cov.score if cov else None,
-        "potential":  cov.potential if cov else None,
-        "loss_ratio": lr,
-        "rma_count":  area.competition_count,          # pre-computed
-        # … add premium volume, claim freq when you have them …
-    })
+from reportlab.lib.utils import ImageReader  # Add this import
+
+# views.py  – revised export_pdf
+# views.py
+import base64, io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+from rest_framework.decorators import api_view
+from django.http import FileResponse
+
+
+@api_view(["POST"])
+def export_pdf(request):
+    """
+    Accepts JSON  {img: dataURL, title: str, kpis: {...}}
+    Returns a generated PDF file.
+    """
+    data = request.data          # ✅ DRF already parsed the JSON
+
+    # -- decode the JPEG/PNG sent by the browser -----------------------
+    img_b64   = data["img"].split(",", 1)[1]
+    img_bytes = base64.b64decode(img_b64)
+
+    # -- build the PDF -------------------------------------------------
+    buffer = io.BytesIO()
+    pdf    = canvas.Canvas(buffer, pagesize=A4)
+
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(40, 800, f"RMA GIS Report — {data['title']}")
+
+    img_reader = ImageReader(io.BytesIO(img_bytes))   # tells reportlab the format
+    pdf.drawImage(img_reader, 40, 380, width=515, height=400)
+
+    y = 340
+    pdf.setFont("Helvetica", 11)
+    for label, val in data["kpis"].items():
+        pdf.drawString(40, y, f"{label.capitalize():<15}: {val}")
+        y -= 18
+
+    pdf.save()
+    buffer.seek(0)
+    return FileResponse(buffer, as_attachment=True,
+                        filename="RMA_report.pdf")

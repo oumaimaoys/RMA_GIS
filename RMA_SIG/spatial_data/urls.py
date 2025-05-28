@@ -9,7 +9,8 @@ urlpatterns = [
     path("api/competitor.geojson",  views.competitor_geojson,  name="competitor-geojson"),
     path("api/rma.geojson",  views.rma_office_geojson,  name="rma-geojson"),
     path('api/run-score/', views.run_score_view, name='run-score'),
-    path('api/area/<int:pk>/metrics/', views.area_metrics, name='area-metrics'),
+    path('api/export/pdf/', views.export_pdf, name='export-pdf')
+
 
 
 

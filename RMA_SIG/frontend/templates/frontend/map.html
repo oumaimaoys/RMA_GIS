@@ -35,6 +35,13 @@
     </label>
     <span class="layer-label">RMA Only</span>
   </div>
+  <!-- Export button -->
+  <button id="export-pdf-btn" class="export-btn"
+          style="margin-top:8px;margin-left:38px;padding:6px 14px;
+                background:#d35400;color:#fff;border:none;border-radius:6px;
+                cursor:pointer;">
+    Export PDF
+  </button>
 </div>
 
 <div id="info-card" style="display: none; min-width: fit-content;">
@@ -72,11 +79,16 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-hash"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
+
 
 <script>
   const map = L.map("map").setView([29, -6], 6);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18}).addTo(map);
+  const canvasRenderer = L.canvas({ padding: 0.5 });
+
 
   let provincesLayer = null;
   let communesLayer = null;
@@ -225,9 +237,11 @@
     if (agencyLayer) map.removeLayer(agencyLayer);
 
     agencyLayer = L.geoJSON({ type: "FeatureCollection", features: combined }, {
+      renderer: canvasRenderer,
       pointToLayer: (feature, latlng) => {
       const isRMA = feature.properties.name && feature.properties.address && feature.properties.city;
         return L.circleMarker(latlng, {
+          renderer: canvasRenderer,    
           radius: 6,
           fillColor: isRMA ? "#2980b9" : "#27ae60",
           color: "#fff",
@@ -343,10 +357,13 @@
       provinceRmaMin = Math.min(...values);
       provinceRmaMax = Math.max(...values);
 
+      /* ✱ pass renderer */
       provincesLayer = L.geoJSON(provinceData, {
-        style: provinceStyle,
-        onEachFeature: onEachFeature
+        renderer: canvasRenderer,      // ← here
+        style:    provinceStyle,
+        onEachFeature
       }).addTo(map);
+
     })
     .finally(() => {
       hideLoading(); // ✅ Hide loader when done
@@ -364,8 +381,9 @@ function loadCommunes() {
       communeRmaMax = Math.max(...values);
 
       communesLayer = L.geoJSON(communeData, {
-        style: communeStyle,
-        onEachFeature: onEachFeature
+        renderer: canvasRenderer,      // ← here
+        style:    communeStyle,
+        onEachFeature
       }).addTo(map);
     })
     .finally(() => {
@@ -418,6 +436,100 @@ function loadCommunes() {
     }
   });
 
+</script>
+<script>
+  /* ---------------- CSRF helper ---------------- */
+  // Better CSRF token retrieval
+  function getCSRFToken() {
+      // Try multiple methods
+      let token = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+      if (!token) {
+          token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      }
+      if (!token) {
+          const cookieMatch = document.cookie.match(/csrftoken=([^;]*)/);
+          token = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
+      }
+      return token;
+  }
+
+  const csrftoken = getCSRFToken();
+
+async function exportPdf () {
+  console.log('🔥 exportPdf function started!');
+  try {
+    console.log('📸 Capturing map with leaflet-image…');
+
+    /* 1️⃣  Get an exact PNG of the map layer */
+    const imgData = await new Promise((resolve, reject) => {
+      leafletImage(map, (err, canvas) => {
+        if (err) return reject(err);
+        resolve(canvas.toDataURL('image/png'));
+      });
+    });
+    console.log('✅ Map captured, size:', imgData.length);
+
+        // Rest of your code...
+        const payload = {
+            img: imgData,
+            title: document.getElementById('region-name')?.textContent || 'Vue générale',
+            kpis: {
+                score: document.getElementById('region-score')?.textContent,
+                potential: document.getElementById('region-potential')?.textContent,
+                population: document.getElementById('region-population')?.textContent,
+                insured: document.getElementById('region-insured-population')?.textContent,
+                vehicles: document.getElementById('region-vehicules')?.textContent,
+                rma: document.getElementById('region-rma-count')?.textContent
+            }
+        };
+
+        const payloadSize = JSON.stringify(payload).length;
+        console.log('📏 Payload size (MB):', (payloadSize / 1024 / 1024).toFixed(2));
+
+        console.log('🚀 Sending request...');
+        const res = await fetch("{% url 'export-pdf' %}", {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('❌ Error response:', errorText);
+            alert('Erreur lors de la création du PDF (' + res.status + '): ' + errorText);
+            return;
+        }
+
+        const blob = await res.blob();
+        saveAs(blob, 'RMA_report.pdf');
+        console.log('✅ PDF export completed!');
+        
+    } catch (error) {
+        console.error('💥 Error in exportPdf:', error);
+        alert('Erreur: ' + error.message);
+    }
+}
+  // Better event listener attachment
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, looking for export button...');
+    const exportBtn = document.getElementById('export-pdf-btn');
+    
+    if (!exportBtn) {
+        console.error('❌ Export PDF button not found!');
+        return;
+    }
+    
+    console.log('✅ Export PDF button found');
+    exportBtn.addEventListener('click', function(e) {
+        console.log('🖱️ Export button clicked!');
+        e.preventDefault(); // Prevent any default behavior
+        exportPdf();
+    });
+});
 
 </script>
 {% endblock %}
