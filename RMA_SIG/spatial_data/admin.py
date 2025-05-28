@@ -631,5 +631,5 @@ class LossRatioAdmin(admin.ModelAdmin):
 @admin.register(CoverageScore)
 class CoverageScoreAdmin(admin.ModelAdmin):
     list_display = ('area', 'score', 'potential', "calculation_date")
-    list_filter = ('area', 'potential')
+    list_filter = ('potential',)
     search_fields = ('area__name',)

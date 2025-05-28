@@ -33,7 +33,7 @@ urlpatterns = [
         login_required(TemplateView.as_view(template_name='home.html')),
         name='home'
     ),
-    path("map/", include("frontend.urls")),      # or point directly at frontend.views.map_view
+    path("/", include("frontend.urls")),      # or point directly at frontend.views.map_view
     path('spatial/', include('spatial_data.urls')),  # ✅ this must be present
 
 ]

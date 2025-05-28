@@ -39,11 +39,19 @@
 
 <div id="info-card" style="display: none; min-width: fit-content;">
   <h3 id="region-name"></h3>
+  <!-- NEW -->
+  <p><strong>Score de couverture&nbsp;(0-100):</strong>
+     <span id="region-score"></span></p>
+  <p><strong>Potentiel:</strong>
+     <span id="region-potential"></span></p>
+
+  <hr>
   <p><strong>Agences RMA:</strong> <span id="region-rma-count"></span></p>
   <p><strong>Population:</strong> <span id="region-population"></span></p>
   <p><strong>Population assurable:</strong> <span id="region-insured-population"></span></p>
   <p><strong>Nombre de vehicules estimées:</strong> <span id="region-vehicules"></span></p>
 </div>
+
   
 <div id="map"></div>
 <div id="loading-screen" style="
@@ -63,6 +71,9 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-hash"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
   const map = L.map("map").setView([29, -6], 6);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18}).addTo(map);
@@ -80,7 +91,7 @@
   let communeRmaCounts = {};
   let provinceRmaMin = 0, provinceRmaMax = 1;
   let communeRmaMin = 0, communeRmaMax = 1;
-
+  const hash = new L.Hash(map);
   // Utility for point in polygon
   function pointInPolygon(point, polygon) {
     const x = point[0], y = point[1];
@@ -299,6 +310,8 @@
       loadAgenciesWithinRegion(feature);
 
       const props = feature.properties;
+      const score      = props.coverage_score;        // number or undefined
+      const potential  = props.coverage_potential;
       let name = props.name || props.Nom_Commun || "Inconnu";
       let rma_count = props.rma_count || 0;
       let pop  = props.population || props.Population;
@@ -306,6 +319,10 @@
       let vehicles = props.estimated_vehicles;
 
       document.getElementById("region-name").textContent = name;
+      document.getElementById("region-score").textContent    =
+        score !== undefined ? score.toFixed(1) : "—";
+      document.getElementById("region-potential").textContent=
+          potential || "—";
       document.getElementById("region-rma-count").textContent = rma_count;
       document.getElementById("region-population").textContent = pop ? pop.toLocaleString() : "Donnée non disponible";
       document.getElementById("region-insured-population").textContent = pop_insured ? pop_insured.toLocaleString() : "Donnée non disponible";
@@ -366,6 +383,9 @@ function loadCommunes() {
     if (loader) loader.style.display = "none";
   }
 
+
+
+
   // Load competitor and rma data
   Promise.all([
     fetch("{% url 'competitor-geojson' %}").then(res => res.json()),
@@ -397,6 +417,7 @@ function loadCommunes() {
       clearAgencies();
     }
   });
+
 
 </script>
 {% endblock %}

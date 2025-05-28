@@ -1,108 +1,181 @@
+# spatial_data/management/commands/calculate_scores.py
+"""
+Compute an AHP-weighted coverage score for every Area (Commune / Province).
+
+Score =
+    0.35·Demand
+  + 0.20·Competition          (distance-decay over Competitor locations)
+  + 0.15·Economic             (bank density)
+  + 0.10·Accessibility        (stub = 0 for now)
+  + 0.20·Risk                 (logistic of loss ratio)
+
+The raw score is min-max rescaled to 0-100, then bucketed into
+HIGH / MEDIUM / LOW potential.
+
+Works with: Area.boundary (MultiPolygon), Competitor.location, Bank.location
+"""
+
+import math
+import statistics as stats
+from typing import List
+
 from django.core.management.base import BaseCommand
 from django.db.models import Avg
 from django.utils import timezone
-from spatial_data.models import Area, LossRatio, CoverageScore, Commune, Province
+from django.contrib.gis.measure import D
+from spatial_data.models import (
+    Area, Commune, Province,
+    CoverageScore, LossRatio,
+    Competitor, Bank
+)
+
+# ----------------------- parameters ----------------------------------
+BETA             = -1.5    # distance-decay exponent for competition
+LOSS_MID         = 0.65    # logistic midpoint for loss ratio
+LOSS_STEEPNESS   = 10      # steeper drop above LOSS_MID
+COMP_RADIUS_KM   = 30      # search radius around area centroid
+PROJ_SRID        = 3857    # Web-Mercator (metres) for distance calcs
+# ---------------------------------------------------------------------
+
+
+# ----------------------- helpers -------------------------------------
+
+def zscores(values: List[float]) -> List[float]:
+    μ = stats.fmean(values)
+    σ = stats.pstdev(values) or 1.0
+    return [(v - μ) / σ for v in values]
+
+
+def logistic(x: float, mid=LOSS_MID, k=LOSS_STEEPNESS) -> float:
+    """S-curve in [0, 1]; higher x above *mid* → lower output."""
+    return 1.0 / (1.0 + math.exp(k * (x - mid)))
+
+
+def competition_intensity(anchor: Area,
+                          radius_km: float = COMP_RADIUS_KM,
+                          beta: float = BETA) -> float:
+    """
+    Sum exp(beta·d_km) for all Competitor.points within *radius_km*
+    of the area’s centroid. Returns 0 if boundary is missing.
+    """
+    if not anchor.boundary:
+        return 0.0
+
+    # centroid as Point in metres
+    centroid = anchor.boundary.centroid.transform(PROJ_SRID, clone=True)
+
+    nearby = (
+        Competitor.objects
+        .filter(location__distance_lte=(anchor.boundary, D(km=radius_km)))
+        .only('location')
+    )
+
+    intensity = 0.0
+    for comp in nearby:
+        loc = comp.location
+        if not loc:
+            continue
+        d_m  = centroid.distance(loc.transform(PROJ_SRID, clone=True))
+        d_km = d_m / 1000.0
+        intensity += math.exp(beta * d_km)
+
+    return intensity
+
+
+# ----------------------- command -------------------------------------
 
 class Command(BaseCommand):
-    help = "Calculate and save global coverage score for each area with loss ratio consideration"
+    help = "Recalculate coverage scores for all areas."
 
     def handle(self, *args, **kwargs):
-        areas = Area.objects.all()
+        areas = list(
+            Area.objects.all()
+            .select_related()     # pulls Commune / Province attrs
+        )
 
-        # Precompute loss ratios
-        loss_ratios = {}
-        for area in areas:
-            if isinstance(area, Commune):
-                qs = LossRatio.objects.filter(commune=area)
-            elif isinstance(area, Province):
-                qs = LossRatio.objects.filter(province=area)
-            else:
-                qs = None
+        if not areas:
+            self.stdout.write(self.style.WARNING("No Area records found."))
+            return
 
-            if qs is not None:
-                avg_loss = qs.aggregate(avg=Avg('loss_ratio'))['avg'] or 0
-            else:
-                avg_loss = 0
+        # ---- collect raw variables ----------------------------------
+        pop            = [a.population or 0               for a in areas]
+        insured        = [a.insured_population or 0       for a in areas]
+        demand_gap     = [max(p - i, 0)                   for p, i in zip(pop, insured)]
+        veh            = [a.estimated_vehicles or 0       for a in areas]
+        bank_density   = [
+            (a.bank_count or 0) / (p or 1) * 1000.0       # banks per 1 000 inhabitants
+            for a, p in zip(areas, pop)
+        ]
 
-            loss_ratios[area.id] = avg_loss
+        # loss ratio per area
+        loss_ratio = []
+        for a in areas:
+            qs = (
+                LossRatio.objects.filter(commune=a) if isinstance(a, Commune)
+                else LossRatio.objects.filter(province=a) if isinstance(a, Province)
+                else LossRatio.objects.none()
+            )
+            loss_ratio.append(qs.aggregate(avg=Avg('loss_ratio'))['avg'] or 0)
 
-        # Gather data for normalization
-        pop_list = [a.population for a in areas]
-        insured_list = [a.insured_population for a in areas]
-        veh_list = [a.estimated_vehicles for a in areas]
-        comp_list = [a.competition_count for a in areas]
-        bank_list = [a.bank_count for a in areas]
-        loss_ratio_list = [loss_ratios[a.id] for a in areas]
+        # distance-decay competition
+        comp_intensity = [competition_intensity(a) for a in areas]
 
-        def normalize(series):
-            """Normalize to 0-1 range"""
-            min_val = min(series)
-            max_val = max(series)
-            if max_val == min_val:  # Handle case where all values are the same
-                return [0.5 for _ in series]  # Return middle value
-            return [(v - min_val) / (max_val - min_val) for v in series]
+        # ---- z-standardise ------------------------------------------
+        pop_z, gap_z, veh_z, bank_z, comp_z = map(
+            zscores, [pop, demand_gap, veh, bank_density, comp_intensity]
+        )
 
-        # Normalize all metrics to 0-1 scale
-        pop_norm = normalize(pop_list)
-        insured_norm = normalize(insured_list)
-        veh_norm = normalize(veh_list)
-        comp_norm = normalize(comp_list)
-        bank_norm = normalize(bank_list)
-        loss_norm = normalize(loss_ratio_list)
+        # ---- build raw composite ------------------------------------
+        raw_scores = []
+        parts      = []   # for optional debugging
 
-        # Debug: Print some normalized values to check variation
-        self.stdout.write(f"Sample normalized values:")
-        self.stdout.write(f"Population: {pop_norm[:5]}")
-        self.stdout.write(f"Competition: {comp_norm[:5]}")
-        self.stdout.write(f"Banks: {bank_norm[:5]}")
+        for i, a in enumerate(areas):
+            demand       = 0.4 * pop_z[i] + 0.6 * gap_z[i]
+            competition  = -comp_z[i]                  # less intensity ⇒ higher score
+            economic     = bank_z[i]
+            accessibility = 0                          # TODO: add drive-time
+            risk         = logistic(loss_ratio[i])
 
-        for i, area in enumerate(areas):
-            # Market Demand Score (0-1 scale)
-            demand_score = 0.4 * pop_norm[i] + 0.4 * insured_norm[i] + 0.2 * veh_norm[i]
-            
-            # Competition Score (inverted - less competition = higher score)
-            competition_score = 1 - comp_norm[i]
-            
-            # Economic Access Score
-            economic_score = bank_norm[i]
-            
-            # Risk Score (inverted - lower loss ratio = higher score)
-            risk_score = 1 - loss_norm[i]
-
-            # Calculate weighted final score (0-1 scale)
-            final_score_normalized = (
-                0.40 * demand_score +      # Market potential
-                0.30 * competition_score + # Competition advantage  
-                0.20 * economic_score +    # Economic accessibility
-                0.10 * risk_score          # Risk consideration
+            final_raw = (
+                0.35 * demand +
+                0.20 * competition +
+                0.15 * economic +
+                0.10 * accessibility +
+                0.20 * risk
             )
 
-            # Convert to 0-100 scale
-            final_score_100pt = round(final_score_normalized * 100, 2)
+            raw_scores.append(final_raw)
+            parts.append((demand, competition, economic, risk))
 
-            # Determine potential level
-            if final_score_100pt >= 70:
-                potential = 'HIGH'
-            elif final_score_100pt >= 40:
-                potential = 'MEDIUM'
-            else:
-                potential = 'LOW'
+        # ---- rescale to 0-100 ---------------------------------------
+        s_min, s_max = min(raw_scores), max(raw_scores)
+        span         = s_max - s_min or 1.0
 
-            # Debug: Print calculation for first few areas
-            if i < 3:
-                self.stdout.write(f"Area {area.name}:")
-                self.stdout.write(f"  Demand: {demand_score:.3f}, Competition: {competition_score:.3f}")
-                self.stdout.write(f"  Economic: {economic_score:.3f}, Risk: {risk_score:.3f}")
-                self.stdout.write(f"  Final Score: {final_score_100pt}")
+        for i, a in enumerate(areas):
+            score_100 = round((raw_scores[i] - s_min) / span * 100, 2)
+            potential = (
+                'HIGH'   if score_100 >= 70 else
+                'MEDIUM' if score_100 >= 40 else
+                'LOW'
+            )
 
-            # Save or update CoverageScore
             CoverageScore.objects.update_or_create(
-                area=area,
-                defaults={
-                    'score': final_score_100pt,
-                    'potential': potential,
-                    'calculation_date': timezone.now(),
-                }
+                area=a,
+                defaults=dict(
+                    score=score_100,
+                    potential=potential,
+                    calculation_date=timezone.now(),
+                )
             )
 
-        self.stdout.write(self.style.SUCCESS("Coverage scores calculated and saved for all areas."))
+            # print details for first three areas
+            if i < 3:
+                dem, com, eco, risk = parts[i]
+                self.stdout.write(f"{a.name:<25} "
+                                  f"D={dem:6.2f}  C={com:6.2f}  "
+                                  f"E={eco:6.2f}  R={risk:4.2f}  "
+                                  f"→ {score_100:6.2f}")
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Coverage scores updated for {len(areas)} areas."
+        ))
