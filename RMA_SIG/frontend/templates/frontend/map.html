@@ -37,7 +37,7 @@
   </div>
   <!-- Export button -->
   <button id="export-pdf-btn" class="export-btn"
-          style="margin-top:8px;margin-left:38px;padding:6px 14px;
+          style="margin-top:8px;margin-left:10px;padding:6px 14px;
                 background:#d35400;color:#fff;border:none;border-radius:6px;
                 cursor:pointer;">
     Export PDF
@@ -76,6 +76,35 @@
 ">
   Chargement des données...
 </div>
+<!-- overlay shown ONLY while the PDF is generated -->
+<div id="export-overlay" style="
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: rgba(0,0,0,.35);
+  display: none;                       /* hidden by default */
+  align-items: center; justify-content: center;
+  z-index: 10000;
+">
+  <div style="
+      background:#fff;
+      padding:26px 32px;
+      border-radius:12px;
+      box-shadow:0 2px 8px rgba(0,0,0,.3);
+      font-size:1.1rem; font-weight:600;
+      display:flex; align-items:center; gap:12px;">
+    <span id="export-msg">Génération du PDF…</span>
+    <svg class="spinner" viewBox="0 0 50 50" width="32" height="32">
+      <circle cx="25" cy="25" r="20" fill="none" stroke="#d35400"
+              stroke-width="5" stroke-linecap="round"
+              stroke-dasharray="31.4 31.4">
+        <animateTransform attributeName="transform" type="rotate"
+                          from="0 25 25" to="360 25 25"
+                          dur="1s" repeatCount="indefinite"/>
+      </circle>
+    </svg>
+  </div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-hash"></script>
@@ -85,8 +114,19 @@
 
 
 <script>
-  const map = L.map("map").setView([29, -6], 6);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18}).addTo(map);
+  // Centre initial sur le Maroc
+  const map = L.map('map').setView([31.7, -7.1], 6);
+
+  // Tuiles TomTom Orbis Maps (vue géopolitique marocaine)
+  const tomtomUrl =
+    'https://{s}.api.tomtom.com/maps/orbis/map-display/tile/{z}/{x}/{y}.png' +
+    '?apiVersion=1&key=KMOHcDyNXgvQphFMEKmAOPXkr6MLkybG&style=street-light&tileSize=256&view=MA';
+
+  L.tileLayer(tomtomUrl, {
+    subdomains: 'abc',          // TomTom utilise a,b,c
+    attribution: '© TomTom',
+    maxZoom: 18
+}).addTo(map);
   const canvasRenderer = L.canvas({ padding: 0.5 });
 
 
@@ -423,6 +463,14 @@ function loadCommunes() {
     }
   }
 
+  function showExportOverlay(msg='Génération du PDF…') {
+    document.getElementById('export-msg').textContent = msg;
+    document.getElementById('export-overlay').style.display = 'flex';
+  }
+  function hideExportOverlay() {
+    document.getElementById('export-overlay').style.display = 'none';
+  }
+
   // Reset/clear on zoom out
   map.on("zoomend", () => {
     if (map.getZoom() < 8) {
@@ -455,63 +503,65 @@ function loadCommunes() {
 
   const csrftoken = getCSRFToken();
 
-async function exportPdf () {
+async function exportPdf() {
   console.log('🔥 exportPdf function started!');
   try {
-    console.log('📸 Capturing map with leaflet-image…');
-
-    /* 1️⃣  Get an exact PNG of the map layer */
+    /* 1️⃣  Capture the map ------------------------------------------------ */
+    showExportOverlay('Capture de la carte…');
     const imgData = await new Promise((resolve, reject) => {
       leafletImage(map, (err, canvas) => {
         if (err) return reject(err);
-        resolve(canvas.toDataURL('image/png'));
+        resolve(canvas.toDataURL('image/png'));   // crisp PNG
       });
     });
     console.log('✅ Map captured, size:', imgData.length);
 
-        // Rest of your code...
-        const payload = {
-            img: imgData,
-            title: document.getElementById('region-name')?.textContent || 'Vue générale',
-            kpis: {
-                score: document.getElementById('region-score')?.textContent,
-                potential: document.getElementById('region-potential')?.textContent,
-                population: document.getElementById('region-population')?.textContent,
-                insured: document.getElementById('region-insured-population')?.textContent,
-                vehicles: document.getElementById('region-vehicules')?.textContent,
-                rma: document.getElementById('region-rma-count')?.textContent
-            }
-        };
+    /* 2️⃣  Build payload -------------------------------------------------- */
+    const payload = {
+      img:   imgData,
+      title: document.getElementById('region-name')?.textContent || 'Vue générale',
+      kpis: {
+        score:      document.getElementById('region-score')?.textContent,
+        potential:  document.getElementById('region-potential')?.textContent,
+        population: document.getElementById('region-population')?.textContent,
+        insured:    document.getElementById('region-insured-population')?.textContent,
+        vehicles:   document.getElementById('region-vehicules')?.textContent,
+        rma:        document.getElementById('region-rma-count')?.textContent
+      }
+    };
 
-        const payloadSize = JSON.stringify(payload).length;
-        console.log('📏 Payload size (MB):', (payloadSize / 1024 / 1024).toFixed(2));
+    /* 3️⃣  Send to backend ------------------------------------------------- */
+    showExportOverlay('Génération du PDF…');
+    const res = await fetch("{% url 'export-pdf' %}", {
+      method:      'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  csrftoken                  // <-- token you fetched earlier
+      },
+      body: JSON.stringify(payload)
+    });
 
-        console.log('🚀 Sending request...');
-        const res = await fetch("{% url 'export-pdf' %}", {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrftoken
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errorText = await res.text();
-            console.error('❌ Error response:', errorText);
-            alert('Erreur lors de la création du PDF (' + res.status + '): ' + errorText);
-            return;
-        }
-
-        const blob = await res.blob();
-        saveAs(blob, 'RMA_report.pdf');
-        console.log('✅ PDF export completed!');
-        
-    } catch (error) {
-        console.error('💥 Error in exportPdf:', error);
-        alert('Erreur: ' + error.message);
+    if (!res.ok) {
+      const txt = await res.text();
+      hideExportOverlay();
+      console.error('❌ Error response:', txt);
+      alert('Erreur lors de la création du PDF (' + res.status + '): ' + txt);
+      return;
     }
+
+    /* 4️⃣  Download ------------------------------------------------------- */
+    showExportOverlay('Téléchargement…');
+    const blob = await res.blob();
+    saveAs(blob, 'RMA_report.pdf');
+    console.log('✅ PDF export completed!');
+
+  } catch (err) {
+    console.error('💥 Error in exportPdf:', err);
+    alert('Erreur: ' + err.message);
+  } finally {
+    hideExportOverlay();                 // always hide, success or fail
+  }
 }
   // Better event listener attachment
 document.addEventListener('DOMContentLoaded', function() {
