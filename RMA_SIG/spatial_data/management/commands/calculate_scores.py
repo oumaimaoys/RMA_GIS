@@ -26,8 +26,9 @@ from django.contrib.gis.measure import D
 from spatial_data.models import (
     Area, Commune, Province,
     CoverageScore, LossRatio,
-    Competitor, Bank
+    Competitor, Bank, CoverageStats
 )
+
 
 # ----------------------- parameters ----------------------------------
 BETA             = -1.5    # distance-decay exponent for competition
@@ -179,3 +180,14 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Coverage scores updated for {len(areas)} areas."
         ))
+        raw_values = raw_scores  # from your loop
+        CoverageStats.objects.update_or_create(
+            pk=1,  # single record for stats
+            defaults={
+                'raw_min': min(raw_values),
+                'raw_max': max(raw_values),
+                'raw_mean': stats.mean(raw_values),
+                'raw_stddev': stats.pstdev(raw_values),
+                'calc_date': timezone.now(),
+            }
+        )

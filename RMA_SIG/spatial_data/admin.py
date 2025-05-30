@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -633,3 +633,11 @@ class CoverageScoreAdmin(admin.ModelAdmin):
     list_display = ('area', 'score', 'potential', "calculation_date")
     list_filter = ('potential',)
     search_fields = ('area__name',)
+
+@admin.register(CoverageStats)
+class CoverageStatsAdmin(admin.ModelAdmin):
+    list_display = ('calc_date', 'raw_min', 'raw_max', 'raw_mean', 'raw_stddev')
+    search_fields = ('calc_date',)
+
+    def get_readonly_fields(self, request, obj=None):
+        return ['calc_date']  # Make calc_date read-only

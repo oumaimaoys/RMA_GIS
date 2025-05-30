@@ -1,6 +1,7 @@
 {# templates/map.html #}
 {% extends "base.html" %}
 {% load static %}
+{% csrf_token %}
 
 {% block head %}
   {{ block.super }}
@@ -51,6 +52,11 @@
       <span class="slider"></span>
     </label>
     <span class="layer-label">coverage score</span>
+  </div>
+  <div class="toggle-switch" style="margin-top:8px;margin-left:38px;">
+    <button id="simulateur-btn" class="sim-btn">
+      ➕ Nouveau site
+    </button>
   </div>
   <!-- Exp
   <!-- Export button -->
@@ -754,6 +760,104 @@ rmaOnlyToggle.addEventListener('change', e => {
   }
 });
 
+</script>
+<script>
+  /* ------------------------------------------------------------------
+ *  SIMULATEUR : draggable marker + instant score
+ * ----------------------------------------------------------------*/
+const simuBtn = document.getElementById('simulateur-btn');
+let simuMarker = null;              // leaflet marker instance
+let simuTooltip = null;             // where we drop the score
+
+// Get CSRF token
+function enableSimuMode() {
+    // 1. deactivate heat-map + coverage score for clarity
+    if (typeof heatmapToggle !== 'undefined') {
+        heatmapToggle.checked = false;
+        heatmapActive = false;
+    }
+    if (typeof scoreToggle !== 'undefined' && scoreToggle.checked) {
+        scoreToggle.checked = false;
+        if (typeof hideScoreLayer === 'function') hideScoreLayer();
+    }
+
+    // 2. create marker at map-centre (or reuse existing)
+    if (!simuMarker) {
+        simuMarker = L.marker(map.getCenter(), {draggable: true})
+            .addTo(map)
+            .on('dragend', onSimuDrop);
+    } else {
+        simuMarker.setLatLng(map.getCenter()).addTo(map);
+    }
+    
+    onSimuDrop();                              // immediate first score
+    simuBtn.classList.add('active');
+}
+
+function disableSimuMode() {
+    if (simuMarker) map.removeLayer(simuMarker);
+    if (simuTooltip) {
+        map.closePopup(simuTooltip);
+        simuTooltip = null;
+    }
+    simuBtn.classList.remove('active');
+}
+
+function onSimuDrop() {
+    const {lat, lng} = simuMarker.getLatLng();
+    
+    // small loading indicator in the button
+    simuBtn.textContent = '⏳…';
+
+    console.log('Simulate URL →', "{% url 'simulate-score' %}");
+
+    
+    fetch("{% url 'simulate-score' %}", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken
+        },
+        body: JSON.stringify({ lat, lon: lng })
+    })
+    .then(r => {
+        if (!r.ok) {
+            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        }
+        return r.json();
+    })
+    .then(data => {
+        const html = `<strong>Score estimé</strong><br>
+                      Couverture : <b>${data.coverage.toFixed(1)}</b><br>
+                      Potentiel  : <b>${data.potential}</b>`;
+        
+        if (simuTooltip) {
+            simuTooltip.setContent(html).setLatLng([lat, lng]);
+        } else {
+            simuTooltip = L.popup()
+                .setContent(html)
+                .setLatLng([lat, lng])
+                .openOn(map);
+        }
+    })
+    .catch(err => {
+        console.error('Simulator error:', err);
+        alert('Erreur simulateur\n' + err.message);
+    })
+    .finally(() => {
+        simuBtn.textContent = '➕ Nouveau site';
+    });
+}
+
+/* click ➕ / ✖︎ --------------------------------------------*/
+simuBtn.addEventListener('click', e => {
+    e.preventDefault();
+    if (simuMarker && map.hasLayer(simuMarker)) {
+        disableSimuMode();
+    } else {
+        enableSimuMode();
+    }
+});
 </script>
 <script>
   /* ---------------- CSRF helper ---------------- */

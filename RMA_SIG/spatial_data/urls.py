@@ -13,6 +13,8 @@ urlpatterns = [
     path('api/export/pdf/', views.export_pdf, name='export-pdf'),
     path("api/province-scores.geojson",  views.province_scores_geojson, name="province-scores-geojson"),
     path("api/commune-scores.geojson",   views.commune_scores_geojson, name="commune-scores-geojson"),
+    path("api/simulate-score/", views.simulate_score, name="simulate-score"),
+
 
 
 

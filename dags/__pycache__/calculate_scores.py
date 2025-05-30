@@ -6,12 +6,14 @@ import logging
 
 def trigger_django_scoring():
     url = "http://django:8000/spatial/api/run-score/"
+    logging.info(f"👉 POSTing to {url}")
     try:
-        response = requests.post(url, json={}, timeout=10)
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        logging.error(f"❌ Status: {response.status_code}")
-
+        resp = requests.post(url, json={}, timeout=120)
+        logging.info(f"🔹 HTTP {resp.status_code}")
+        logging.info(f"🔹 Response body: {resp.text!r}")
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        logging.error("❌ Request failed", exc_info=True)
         raise
 with DAG(
     dag_id='calculate_scores_dag',

@@ -125,3 +125,9 @@ class CoverageScore(models.Model):
     class Meta:
         unique_together = ('area', 'calculation_date')
    
+class CoverageStats(models.Model):
+    calc_date   = models.DateTimeField(auto_now=True)
+    raw_min     = models.FloatField()
+    raw_max     = models.FloatField()
+    raw_mean    = models.FloatField()
+    raw_stddev  = models.FloatField()
