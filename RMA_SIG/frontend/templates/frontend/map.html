@@ -720,14 +720,15 @@ layerToggle.addEventListener('change', e => {
 
 // 2) Heatmap on/off
 heatmapToggle.addEventListener('change', e => {
+  // ➊ if the coverage‐score layer is showing, turn it off
   if (scoreToggle.checked) {
-    // can’t have both
-    e.target.checked = false;
-    return;
+    scoreToggle.checked = false;    // uncheck the score toggle
+    hideScoreLayer();               // remove the choropleth + legend
   }
-  clearEverything();
+
+  // ➋ now toggle heatmap mode as usual
   heatmapActive = e.target.checked;
-  loadCurrentLayer();
+  loadCurrentLayer();               // redraw provinces/communes
 });
 
 // 3) Coverage-Score on/off
