@@ -44,6 +44,15 @@
     </label>
     <span class="layer-label">RMA Only</span>
   </div>
+   <div class="toggle-switch" style="margin-top:8px;margin-left: 87px;">
+    <span class="layer-label">normal</span>
+    <label class="switch">
+      <input type="checkbox" id="score-toggle">
+      <span class="slider"></span>
+    </label>
+    <span class="layer-label">coverage score</span>
+  </div>
+  <!-- Exp
   <!-- Export button -->
   <button id="export-pdf-btn" class="export-btn"
           style="margin-top:8px;margin-left:10px;padding:6px 14px;
@@ -127,11 +136,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
 <script src="https://unpkg.com/leaflet-easyprint@2.1.9/dist/bundle.js"></script> 
-<link rel="stylesheet"
-      href="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.css">
 <script src="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.min.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/leaflet-providers@1.14.0/leaflet-providers.min.js"></script>
+<script src="https://unpkg.com/chroma-js@2.4.2/chroma.min.js"></script>
+
 
 
 <script>
@@ -199,6 +208,32 @@
   let provinceRmaMin = 0, provinceRmaMax = 1;
   let communeRmaMin = 0, communeRmaMax = 1;
   const hash = new L.Hash(map);
+  const SCORE_URL = {
+    provinces : "{% url 'province-scores-geojson' %}",
+    communes  : "{% url 'commune-scores-geojson' %}"
+  };
+  let scoreLayer = { provinces:null, communes:null };   // mémoires séparées
+  let scoreLegend = null;  
+
+  const groups = {
+    provinces : L.layerGroup().addTo(map),
+    communes  : L.layerGroup().addTo(map)
+  };
+
+  function activeGroup(){
+    return groups[currentLayerType];          // renvoie le groupe courant
+  }
+
+  function purgeGroup(type){
+    groups[type].clearLayers();
+  }
+
+  function purgeAll(){
+    groups.provinces.clearLayers();
+    groups.communes.clearLayers();
+    if(scoreLegend)  map.removeControl(scoreLegend);
+  }
+
   // Utility for point in polygon
   function pointInPolygon(point, polygon) {
     const x = point[0], y = point[1];
@@ -286,10 +321,11 @@
     }
   });
 
-  function resetView() {
-    resetAllRegions();
-    clearAgencies();
-    map.setView([29, -6], 6);
+  function resetView(){
+      purgeAll();               // vide les deux groupes
+      clearAgencies();          // (facultatif, pour être sûr)
+      map.setView([29,-6],6);
+      document.getElementById("info-card").style.display = "none";
   }
 
   function resetAllRegions() {
@@ -362,7 +398,7 @@
           layer.bindPopup(`<strong>${name}</strong><br/><b>Mandante:</b> ${mandante}<br/><b>Type:</b> ${competitor_type}<br/><b>Adresse:</b> ${address}<br/><b>Localité:</b> ${city}`);
         }
       }
-    }).addTo(map);
+    }).addTo(activeGroup());;
   }
 
 
@@ -457,7 +493,7 @@
         renderer: canvasRenderer,      // ← here
         style:    provinceStyle,
         onEachFeature
-      }).addTo(map);
+      }).addTo(groups.provinces);
 
     })
     .finally(() => {
@@ -479,7 +515,7 @@ function loadCommunes() {
         renderer: canvasRenderer,      // ← here
         style:    communeStyle,
         onEachFeature
-      }).addTo(map);
+      }).addTo(groups.communes);
     })
     .finally(() => {
       hideLoading(); // ✅ Hide loader when done
@@ -509,8 +545,8 @@ function loadCommunes() {
     loadCurrentLayer(); // call something to decide what to render
   });
   function loadCurrentLayer() {
-    if (provincesLayer) map.removeLayer(provincesLayer);
-    if (communesLayer) map.removeLayer(communesLayer);
+    purgeGroup(currentLayerType);   // ⬅️  NEW : on efface d’abord la couche courante
+
     if (currentLayerType === 'provinces') {
       loadProvinces();
     } else {
@@ -525,6 +561,7 @@ function loadCommunes() {
   function hideExportOverlay() {
     document.getElementById('export-overlay').style.display = 'none';
   }
+  
 
   // Reset/clear on zoom out
   map.on("zoomend", () => {
@@ -538,6 +575,183 @@ function loadCommunes() {
       clearAgencies();
     }
   });
+
+  function getScoreColor(val, min, max){
+    // Handle undefined/null values
+    if (val == null || isNaN(val)) {
+        return '#cccccc'; // Gray color for missing data
+    }
+    
+    // assurez-vous que chroma.min.js est déjà chargé avant ce code
+    return chroma.scale(['#fee5d9','#fcae91','#fb6a4a','#de2d26','#a50f15'])
+                .domain([min, max])(val)
+                .hex();
+}
+
+function buildScoreLayer(adminType, callback){
+    showLoading();
+    fetch(SCORE_URL[adminType])
+        .then(r=>{ if(!r.ok) throw Error(r.statusText); return r.json(); })
+        .then(fc=>{
+            // Filter out features with invalid scores - using coverage_score instead of score
+            const validScores = fc.features
+                .map(f => f.properties.coverage_score)
+                .filter(score => score != null && !isNaN(score) && score !== '');
+            
+            // Check if we have any valid scores
+            if (validScores.length === 0) {
+                throw new Error("Aucun coverage_score valide trouvé dans les données");
+            }
+            
+            const min = Math.min(...validScores);
+            const max = Math.max(...validScores);
+
+            const layer = L.geoJSON(fc, {
+                style: f => ({
+                    weight: 1,
+                    color: '#666',
+                    fillOpacity: .8,
+                    fillColor: getScoreColor(f.properties.coverage_score, min, max)
+                }),
+                onEachFeature: (f, l) => {
+                    const score = f.properties.coverage_score;
+                    const scoreText = (score != null && !isNaN(score)) 
+                        ? score.toFixed(1) 
+                        : 'N/A';
+                    
+                    l.bindPopup(`<strong>${f.properties.name}</strong><br>` +
+                               `Coverage Score : ${scoreText}`);
+                }
+            }).addTo(groups[adminType]);
+
+            callback(layer, min, max);
+        })
+        .catch(err => alert("Erreur score : " + err))
+        .finally(hideLoading);
+}
+
+function showScoreLayer(){
+    const t = currentLayerType;
+
+    purgeGroup(t);            // ⬅️  ENLÈVE provinces/communes (heat-map ou non)
+
+
+    // si déjà présent ⇒ juste l'ajouter
+    if(scoreLayer[t]){
+        map.addLayer(scoreLayer[t]);
+        addOrUpdateLegend(scoreLayer[t]._min, scoreLayer[t]._max);
+        return;
+    }
+
+    // sinon : télécharger, construire et mémoriser
+    buildScoreLayer(t, (lyr,min,max)=>{
+        scoreLayer[t] = lyr;
+        scoreLayer[t]._min = min;
+        scoreLayer[t]._max = max;
+        map.addLayer(lyr);
+        addOrUpdateLegend(min,max);
+    });
+}
+
+function hideScoreLayer(type = currentLayerType){
+    if (scoreLayer[type]) {
+        map.removeLayer(scoreLayer[type]);
+        scoreLayer[type] = null;          // libère la mémoire
+    }
+    if (scoreLegend) {
+        map.removeControl(scoreLegend);
+        scoreLegend = null;
+    }
+}
+
+function addOrUpdateLegend(min,max){
+    if(scoreLegend) map.removeControl(scoreLegend);
+
+    scoreLegend = L.control({position:'bottomright'});
+    scoreLegend.onAdd = ()=>{
+        const div = L.DomUtil.create('div','info legend');
+        const step = (max-min)/5;
+        for(let i=0;i<5;i++){
+            const v0=(min+i*step).toFixed(0), v1=(min+(i+1)*step).toFixed(0);
+            div.innerHTML +=
+                `<i style="background:${getScoreColor((+v0+ +v1)/2,min,max)}"></i> `
+                +`${v0}&ndash;${v1}<br>`;
+        }
+        return div;
+    };
+    scoreLegend.addTo(map);
+}
+
+function clearEverything() {
+  // remove all base geo-json
+  groups.provinces.clearLayers();
+  groups.communes.clearLayers();
+
+  // remove any scoropleth
+  Object.values(scoreLayer).forEach(layer => {
+    if (layer) { 
+      map.removeLayer(layer);
+    }
+  });
+  scoreLayer.provinces = scoreLayer.communes = null;
+  if (scoreLegend) { map.removeControl(scoreLegend); scoreLegend = null; }
+
+  // remove agency markers
+  if (agencyLayer) {
+    map.removeLayer(agencyLayer);
+    agencyLayer = null;
+  }
+}
+
+// Get references to toggles
+const scoreToggle = document.getElementById('score-toggle');
+const layerToggle = document.getElementById('layer-toggle');
+const heatmapToggle = document.getElementById('heatmap-toggle');
+const rmaOnlyToggle = document.getElementById('rma-only-toggle');
+
+/* 2-a  Provinces ↔ Communes -------------------------------------------------*/
+// 1) Layer (Provinces ↔ Communes)
+layerToggle.addEventListener('change', e => {
+  clearEverything();
+  currentLayerType = e.target.checked ? 'communes' : 'provinces';
+  loadCurrentLayer();
+  if (scoreToggle.checked) showScoreLayer();
+});
+
+// 2) Heatmap on/off
+heatmapToggle.addEventListener('change', e => {
+  if (scoreToggle.checked) {
+    // can’t have both
+    e.target.checked = false;
+    return;
+  }
+  clearEverything();
+  heatmapActive = e.target.checked;
+  loadCurrentLayer();
+});
+
+// 3) Coverage-Score on/off
+scoreToggle.addEventListener('change', e => {
+  // turn off heatmap if needed
+  if (e.target.checked && heatmapToggle.checked) {
+    heatmapToggle.checked = false;
+    heatmapActive = false;
+  }
+  clearEverything();
+  if (e.target.checked) {
+    showScoreLayer();
+  } else {
+    loadCurrentLayer();
+  }
+});
+
+// 4) RMA-Only just needs to reload the markers on the current region
+rmaOnlyToggle.addEventListener('change', e => {
+  rmaOnlyActive = e.target.checked;
+  if (currentRegionLayer && currentRegionLayer.feature) {
+    loadAgenciesWithinRegion(currentRegionLayer.feature);
+  }
+});
 
 </script>
 <script>

@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 from .models import Province, Commune, Area, Competitor, RMAOffice, CoverageScore
+from rest_framework_gis.fields import GeometryField
+
 
 class AreaSerializer(GeoFeatureModelSerializer):
     class Meta:
@@ -48,3 +50,14 @@ class RMAOfficeSerializer(GeoFeatureModelSerializer):
         model = RMAOffice
         geo_field = "location"
         fields = ('id', 'name', 'address', 'city')
+
+class CoverageScoreSerializer(GeoFeatureModelSerializer):
+    area_name = serializers.CharField(source='area.name', read_only=True)  
+    geom      = GeometryField(source='area.boundary', read_only=True)  # ← ICI
+    
+
+
+    class Meta:
+        model      = CoverageScore
+        geo_field  = 'geom'           # géométrie de la FK « area »
+        fields     = ('id','score','potential','area_name')  

@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from .models import Province, Commune, RMAOffice, Competitor, CoverageScore, LossRatio, Area
 from django.db.models import Avg
 from django.db.models import Prefetch
-from .serializers import ProvinceSerializer, CommuneSerializer, CompetitorSerializer, RMAOfficeSerializer
+from .serializers import ProvinceSerializer, CommuneSerializer, CompetitorSerializer, RMAOfficeSerializer, AreaSerializer, CoverageScoreSerializer
 import base64, io
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -16,6 +16,7 @@ from rest_framework.parsers import JSONParser
 from django.http import FileResponse
 import json
 from django.http import JsonResponse
+from django.db.models import F
 
 @api_view(["GET"])
 def provinces_geojson(request):
@@ -57,6 +58,48 @@ def rma_office_geojson(request):
     rma_ser  = RMAOfficeSerializer(rmas, many=True)
     return Response(rma_ser.data)
 
+@api_view(["GET"])
+def coverage_scores_geojson(request):
+    # ▸ dernier calcul par zone (PostgreSQL)
+    qs = (CoverageScore.objects
+            .order_by("area_id", "-calculation_date")
+            .distinct("area_id")
+            .select_related("area")
+            .annotate(geom=F("area__boundary")))    # <- copie la géométrie
+
+    serializer = CoverageScoreSerializer(qs, many=True)
+    return Response(serializer.data)    
+@api_view(["GET"])
+def province_scores_geojson(request):
+    """
+    Returns the latest coverage scores for each province.
+    """
+    latest_qs = CoverageScore.objects.order_by("-calculation_date")
+    qs = (
+        Province.objects.all()
+        .prefetch_related(
+            Prefetch("coverage_scores", queryset=latest_qs, to_attr="_cs")
+        )
+    )
+    for p in qs:
+        p._latest_cs = p._cs[0] if p._cs else None
+    return Response(ProvinceSerializer(qs, many=True).data)
+
+@api_view(["GET"])
+def commune_scores_geojson(request):
+    """
+    Returns the latest coverage scores for each commune.
+    """
+    latest_qs = CoverageScore.objects.order_by("-calculation_date")
+    qs = (
+        Commune.objects.all()
+        .prefetch_related(
+            Prefetch("coverage_scores", queryset=latest_qs, to_attr="_cs")
+        )
+    )
+    for c in qs:
+        c._latest_cs = c._cs[0] if c._cs else None
+    return Response(CommuneSerializer(qs, many=True).data)
 
 @api_view(['POST'])
 def run_score_view(request):
