@@ -90,3 +90,44 @@ input:checked + .slider:before {
 .layer-label {
     font-weight: bold;
 }
+
+
+
+.search-box{
+  display:flex;
+  align-items:center;
+  gap:.4rem;
+  background:#fff;
+  border-radius:8px;
+  padding:4px 8px;
+  margin: 8px 10px 8px 10px;
+  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+}
+
+/* Neutraliser les règles Leaflet */
+.leaflet-container .search-box.leaflet-control{
+  position:static !important;
+  margin:0 !important;
+}
+
+/* Champ texte */
+.search-box input{
+  border:none;
+  outline:none;
+  font-size:.9rem;
+  width:190px;
+}
+
+/* Bouton (icône loupe) */
+.search-box button{
+  border:none;
+  background:
+  transparent;
+  cursor:pointer;
+  width:18px;
+  height:18px;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' stroke='%23666' stroke-width='2' viewBox='0 0 24 24' fill='none'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") center/18px 18px no-repeat;
+  opacity:.6;
+  transition:opacity .2s;
+}
+.search-box button:hover{opacity:1;}

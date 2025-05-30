@@ -11,6 +11,15 @@
 
 {% block scripts %}
 <div id="toggle-container">
+  <div class="toggle-switch">
+    <form id="search-box" class="search-box leaflet-control">
+      <input id="search-input"
+            type="text"
+            placeholder="Rechercher une ville"
+            autocomplete="off" />
+      <button type="submit" aria-label="Rechercher"></button>
+    </form>
+  </div>
   <div class="toggle-switch" style="margin-left: 38px;">
     <span class="layer-label">Provinces</span>
     <label class="switch">
@@ -107,29 +116,75 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-providers@1.13.0/leaflet-providers.min.js"></script>      <!-- ✱ NEW -->
+<script src="https://unpkg.com/leaflet-fullscreen@1.6.0/Control.FullScreen.js"></script>                    <!-- ✱ NEW -->
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>         <!-- ✱ NEW -->
+<script src="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.js"></script>                 <!-- ✱ NEW -->
+<script src="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.js"></script>                     <!-- ✱ NEW -->
+<script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>           <!-- ✱ NEW -->
 <script src="https://unpkg.com/leaflet-hash"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
+<script src="https://unpkg.com/leaflet-easyprint@2.1.9/dist/bundle.js"></script> 
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.css">
+<script src="https://unpkg.com/leaflet-measure@3.3.0/dist/leaflet-measure.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet-providers@1.14.0/leaflet-providers.min.js"></script>
 
 
 <script>
-  // Centre initial sur le Maroc
-  const map = L.map('map').setView([31.7, -7.1], 6);
-
-  // Tuiles TomTom Orbis Maps (vue géopolitique marocaine)
-  const tomtomUrl =
+  // 1️⃣  create two basemaps + control
+  const tomtom = L.tileLayer(
     'https://{s}.api.tomtom.com/maps/orbis/map-display/tile/{z}/{x}/{y}.png' +
-    '?apiVersion=1&key=KMOHcDyNXgvQphFMEKmAOPXkr6MLkybG&style=street-light&tileSize=256&view=MA';
+    '?apiVersion=1&key=KMOHcDyNXgvQphFMEKmAOPXkr6MLkybG&style=street-light&tileSize=256&view=MA',
+    {subdomains:'abc', maxZoom:18, attribution:'© TomTom'});
 
-  L.tileLayer(tomtomUrl, {
-    subdomains: 'abc',          // TomTom utilise a,b,c
-    attribution: '© TomTom',
-    maxZoom: 18
-}).addTo(map);
+  const sat     = L.tileLayer.provider('Esri.WorldImagery');
+
+  const baseLayers = {
+    'TomTom MA': tomtom,
+    'Satellite':  sat
+  };
+
+  // 2️⃣  init map with TomTom
+  const map = L.map('map', {layers:[tomtom]}).setView([31.7, -7.1], 6);
+  L.control.layers(baseLayers, null, {position:'bottomleft'}).addTo(map);         // ✱ NEW
+
+  // 3️⃣  fullscreen button
+  if (L.control.fullscreen)  map.addControl(new L.Control.Fullscreen());
+
+  // 4️⃣  scale bar
+  L.control.scale({position:'bottomleft'}).addTo(map);                          // ✱ NEW
+;                                                                // ✱ NEW
+
+  // 7️⃣  geocoder (search bar)
+  (function(){
+  const form   = document.getElementById('search-box');
+  const input  = document.getElementById('search-input');
+  const engine = L.Control.Geocoder.nominatim();   // moteur de recherche
+
+  // Empêche la carte de bouger quand on clique sur le champ
+  L.DomEvent.disableClickPropagation(form);
+  L.DomEvent.disableScrollPropagation(form);
+
+  form.addEventListener('submit', e=>{
+    e.preventDefault();
+    const q = input.value.trim();
+    if(!q) return;
+    engine.geocode(q, results=>{
+      if(results && results.length){
+        map.fitBounds(results[0].bbox);   // zoom sur le 1er résultat
+      }else{
+        alert('Adresse introuvable');
+      }
+    });
+  });
+})();                                 // ✱ NEW
+
+
   const canvasRenderer = L.canvas({ padding: 0.5 });
-
-
   let provincesLayer = null;
   let communesLayer = null;
   let agencyLayer = null;
