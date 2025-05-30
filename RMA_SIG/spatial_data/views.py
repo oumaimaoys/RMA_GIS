@@ -102,17 +102,40 @@ def commune_scores_geojson(request):
         c._latest_cs = c._cs[0] if c._cs else None
     return Response(CommuneSerializer(qs, many=True).data)
 
+# spatial_data/views.py
+
+import logging
+from django.core.management import call_command
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+logger = logging.getLogger(__name__)
+
 @api_view(['POST'])
 def run_score_view(request):
-    print("🔥 Received POST to run-score")
-    print("Headers:", request.headers)
-    print("Body:", request.body)
-
+    """
+    Trigger the nightly AHP‐weighted coverage‐score recalculation.
+    """
     try:
+        logger.info("Received POST to run-score; running calculate_scores command")
+        # this will call spatial_data/management/commands/calculate_scores.py
         call_command('calculate_scores')
-        return Response({"message": "Score calculation triggered."}, status=200)
+        logger.info("calculate_scores completed successfully")
+        return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        # log full traceback
+        logger.exception("Error running calculate_scores")
+        # return JSON error message
+        return Response(
+            {
+                'status': 'error',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 
 from reportlab.lib.utils import ImageReader  # Add this import
 
@@ -160,135 +183,228 @@ def export_pdf(request):
                         filename="RMA_report.pdf")
 
 # spatial_data/views.py
-from math import exp
-from statistics import fmean, pstdev
 
-from django.contrib.gis.geos               import Point
-from django.contrib.gis.measure            import D
-from django.contrib.gis.db.models.functions import Distance
-from django.db.models                      import Avg
-from rest_framework.decorators             import api_view
-from rest_framework.response               import Response
+import math
+import logging
+import requests
+
+from statistics import fmean, pstdev
+from django.conf import settings
+from django.db.models import Avg, F, Q, Sum
+from django.contrib.gis.geos import Point
+from django.contrib.gis.measure import D
+from django.contrib.gis.db.models.functions import Distance, Centroid
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 from rest_framework import status
 
 from .models import (
-    Commune, Province, Area,
-    Competitor, Bank, LossRatio, CoverageScore      # Agency = RMA
+    Commune, Province,
+    Bank, Competitor, LossRatio,
+    CoverageStats
 )
 
-# ----------  constants : keep them in sync with the batch -------------
+# -----------------------------------------------------------------------------
+# Constants (must match your batch job)
+# -----------------------------------------------------------------------------
 BETA             = -1.5
 LOSS_MID         = 0.65
 LOSS_STEEPNESS   = 10
-COMP_RADIUS_KM   = 30
+COMP_RADIUS_KM   = 30  # km
 PROJ_SRID        = 3857
-# ----------------------------------------------------------------------
+ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car"
+# -----------------------------------------------------------------------------
 
-
-@api_view(['POST'])
-def simulate_score(request):
+# -----------------------------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------------------------
+def get_drive_time(lat_from, lon_from, lat_to, lon_to):
     """
-    Accepts {lat, lon}. Returns *freshly recomputed* score & potential
-    for the area (Commune or, if none, Province) containing the point.
-
-    The formula, weights and distance-decay are identical to the nightly
-    `calculate_scores` batch, so you get a perfect preview of what the
-    score would be if you inserted a **new RMA agency right here**.
+    Query OpenRouteService for driving time (minutes) between two WGS84 points.
+    Supports both GeoJSON and ORS v2 formats.
     """
-    stats = CoverageStats.objects.order_by('-calc_date').first()
-
-    try:
-        lat = float(request.data['lat'])
-        lon = float(request.data['lon'])
-    except (KeyError, ValueError):
-        return Response({"detail": "Invalid lat/lon"},
-                        status=status.HTTP_400_BAD_REQUEST)
-
-    pnt = Point(lon, lat, srid=4326)
-
-    #–––– 1. which admin area?  ----------------------------------------
-    try:
-        area = Commune.objects.get(boundary__intersects=pnt)
-    except Commune.DoesNotExist:
-        try:
-            area = Province.objects.get(boundary__intersects=pnt)
-        except Province.DoesNotExist:
-            return Response({"detail": "Point outside known areas"},
-                            status=status.HTTP_404_NOT_FOUND)
-
-    #–––– 2. Collect raw variables for *all* areas in the same class ----
-    cls        = Commune if isinstance(area, Commune) else Province
-    all_areas  = list(cls.objects.all())
-
-    pop            = [a.population or 0               for a in all_areas]
-    insured        = [a.insured_population or 0       for a in all_areas]
-    demand_gap     = [max(p - i, 0)                   for p, i in zip(pop, insured)]
-    veh            = [a.estimated_vehicles or 0       for a in all_areas]
-    bank_density   = [(a.bank_count or 0) / (p or 1) * 1000.0
-                      for a, p in zip(all_areas, pop)]
-
-    # loss ratio
-    loss_ratio = []
-    for a in all_areas:
-        qs = (LossRatio.objects
-                            .filter(commune=a) if isinstance(a, Commune)
-              else LossRatio.objects
-                            .filter(province=a))
-        loss_ratio.append(qs.aggregate(avg=Avg('loss_ratio'))['avg'] or 0)
-
-    # competition intensity
-    comp_intensity = [competition_intensity(a) for a in all_areas]
-
-    #–––– 3. z-scores ---------------------------------------------------
-    pop_z, gap_z, veh_z, bank_z, comp_z = map(
-        _zscores, [pop, demand_gap, veh, bank_density, comp_intensity]
+    api_key = settings.ORS_API_KEY
+    resp = requests.post(
+        ORS_DIRECTIONS_URL,
+        headers={
+            "Authorization": api_key,
+            "Content-Type": "application/json"
+        },
+        json={"coordinates": [[lon_from, lat_from], [lon_to, lat_to]]},
+        timeout=5
     )
+    resp.raise_for_status()
+    data = resp.json()
 
-    idx = all_areas.index(area)
+    # GeoJSON-style "features"
+    feats = data.get("features")
+    if isinstance(feats, list) and feats:
+        segs = feats[0].get("properties", {}).get("segments", [])
+        if segs and segs[0].get("duration") is not None:
+            return segs[0]["duration"] / 60.0
 
-    demand       = 0.4 * pop_z[idx] + 0.6 * gap_z[idx]
-    competition  = -comp_z[idx]                         # lower is better
-    economic     = bank_z[idx]
-    accessibility = 0                                   # still 0
-    risk         = _logistic(loss_ratio[idx])
+    # ORS v2-style "routes"
+    routes = data.get("routes")
+    if isinstance(routes, list) and routes:
+        segs = routes[0].get("segments", [])
+        if segs and segs[0].get("duration") is not None:
+            return segs[0]["duration"] / 60.0
 
-    raw = (0.35 * demand   +
-           0.20 * competition +
-           0.15 * economic +
-           0.10 * accessibility +
-           0.20 * risk)
-
-    # rescale within the class (commune *or* province) to 0-100
-    score_100    = round((raw - stats.raw_min) / (stats.raw_max - stats.raw_min) * 100, 2)
-    potential    = ('HIGH' if score_100 >= 70 else
-                    'MEDIUM' if score_100 >= 40 else
-                    'LOW')
-
-    return Response({
-        "area_id"  : area.id,
-        "area_name": area.name,
-        "coverage" : score_100,
-        "potential": potential
-    })
+    logging.error("ORS response had no duration: %r", data)
+    raise ValueError("No route duration returned from OpenRouteService")
 
 
-# ----------------------------------------------------------------------
-# helpers – verbatim copies of the ones in calculate_scores.py
-# ----------------------------------------------------------------------
+def competition_intensity_py(area):
+    """
+    Sum exp(BETA·d_km) for all Competitor.location within COMP_RADIUS_KM.
+    """
+    # project centroid for accurate metres-based distance
+    centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
+    nearby = Competitor.objects.filter(
+        location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM))
+    )
+    total = 0.0
+    for comp in nearby:
+        d_m = centroid_m.distance(comp.location.transform(PROJ_SRID, clone=True))
+        d_km = d_m / 1000.0
+        total += math.exp(BETA * d_km)
+    return total
+
+
+def bank_intensity_py(area):
+    """
+    Sum exp(BETA·d_km) for all Bank.location within COMP_RADIUS_KM.
+    """
+    centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
+    nearby = Bank.objects.filter(
+        location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM))
+    )
+    total = 0.0
+    for b in nearby:
+        d_m = centroid_m.distance(b.location.transform(PROJ_SRID, clone=True))
+        d_km = d_m / 1000.0
+        total += math.exp(BETA * d_km)
+    return total
+
+
 def _zscores(vals):
     μ = fmean(vals)
     σ = pstdev(vals) or 1.0
     return [(v - μ) / σ for v in vals]
 
-def _logistic(x, mid=LOSS_MID, k=LOSS_STEEPNESS):
-    return 1.0 / (1.0 + exp(k * (x - mid)))
 
-def competition_intensity(area):
-    centroid = area.boundary.centroid
-    qs = (
-      Competitor.objects
-        .filter(location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM)))
-        .annotate(d_km=Distance('location', centroid)/1000.0)
-        .values_list('d_km', flat=True)
+def _logistic(x, mid=LOSS_MID, k=LOSS_STEEPNESS):
+    return 1.0 / (1.0 + math.exp(k * (x - mid)))
+
+
+# -----------------------------------------------------------------------------
+# ORM-based annotation for loss‐ratio (others done in Python)
+# -----------------------------------------------------------------------------
+def get_area_queryset(cls):
+    """
+    Annotate each Area (Commune/Province) with:
+      - id, name, population, insured_population, estimated_vehicles
+      - loss_ratio_avg = Avg('lossratio__loss_ratio')
+    """
+    return (
+        cls.objects
+           .values('id', 'name', 'population', 'insured_population', 'estimated_vehicles')
+           .annotate(loss_ratio_avg=Avg('lossratio__loss_ratio'))
     )
-    return sum(math.exp(BETA * d) for d in qs)
+
+
+# -----------------------------------------------------------------------------
+# Main endpoint
+# -----------------------------------------------------------------------------
+@api_view(['POST'])
+def simulate_score(request):
+    # load latest stats
+    stats = CoverageStats.objects.latest('calc_date')
+
+    # parse input
+    try:
+        lat = float(request.data['lat'])
+        lon = float(request.data['lon'])
+    except (KeyError, ValueError):
+        return Response({"detail": "Invalid lat/lon"}, status=status.HTTP_400_BAD_REQUEST)
+    pnt = Point(lon, lat, srid=4326)
+
+    # find intersection in Communes, else Provinces
+    area_dict = (
+        get_area_queryset(Commune)
+        .filter(boundary__intersects=pnt)
+        .order_by('id')
+        .first()
+    )
+    Model = Commune
+    if not area_dict:
+        area_dict = (
+            get_area_queryset(Province)
+            .filter(boundary__intersects=pnt)
+            .order_by('id')
+            .first()
+        )
+        Model = Province
+    if not area_dict:
+        return Response({"detail": "Outside known areas"}, status=status.HTTP_404_NOT_FOUND)
+
+    # load geometry for Python‐based intensities & routing
+    area_obj = Model.objects.only('boundary').get(pk=area_dict['id'])
+
+    # build raw lists
+    all_areas = list(get_area_queryset(Model))
+    instances = Model.objects.in_bulk([a['id'] for a in all_areas])
+
+    pops   = [a['population'] for a in all_areas]
+    gaps   = [max(a['population'] - a['insured_population'], 0) for a in all_areas]
+    vehs   = [a['estimated_vehicles'] for a in all_areas]
+    banks  = [bank_intensity_py(instances[a['id']]) for a in all_areas]
+    comps  = [competition_intensity_py(instances[a['id']]) for a in all_areas]
+    losses = [a['loss_ratio_avg'] or 0 for a in all_areas]
+
+    # z-score normalization
+    def z(v, mean, std): return (v - mean) / std if std else 0
+    pop_z  = [z(v, stats.pop_mean,  stats.pop_std)  for v in pops]
+    gap_z  = [z(v, stats.gap_mean,  stats.gap_std)  for v in gaps]
+    veh_z  = [z(v, stats.veh_mean,  stats.veh_std)  for v in vehs]
+    bank_z = [z(v, stats.bank_mean, stats.bank_std) for v in banks]
+    comp_z = [z(v, stats.comp_mean, stats.comp_std) for v in comps]
+
+    # find our area’s index
+    idx = next(i for i,a in enumerate(all_areas) if a['id'] == area_dict['id'])
+
+    # compute components
+    demand      = 0.35 * pop_z[idx]   + 0.35 * gap_z[idx] + 0.30 * veh_z[idx]
+    competition = -comp_z[idx]
+    economic    = bank_z[idx]
+
+    # compute routing‐driven accessibility
+    cent = area_obj.boundary.centroid.clone()
+    cent.transform(4326)
+    try:
+        travel_time = get_drive_time(lat, lon, cent.y, cent.x)
+    except ValueError as e:
+        return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+    accessibility = (stats.access_mean - travel_time) / stats.access_std
+
+    risk = _logistic(losses[idx])
+
+    # raw weighted score
+    raw = (
+        0.35 * demand +
+        0.20 * competition +
+        0.15 * economic +
+        0.10 * accessibility +
+        0.20 * risk
+    )
+
+    # final 0–100
+    score = round((raw - stats.raw_min) / (stats.raw_max - stats.raw_min) * 100, 2)
+    potential = 'HIGH' if score >= 70 else 'MEDIUM' if score >= 40 else 'LOW'
+
+    return Response({
+        "area_id":   area_dict['id'],
+        "area_name": area_dict['name'],
+        "coverage":  score,
+        "potential": potential
+    })

@@ -8,7 +8,7 @@ def trigger_django_scoring():
     url = "http://django:8000/spatial/api/run-score/"
     logging.info(f"👉 POSTing to {url}")
     try:
-        resp = requests.post(url, json={}, timeout=120)
+        resp = requests.post(url, json={}, timeout=240)
         logging.info(f"🔹 HTTP {resp.status_code}")
         logging.info(f"🔹 Response body: {resp.text!r}")
         resp.raise_for_status()

@@ -12,3 +12,4 @@ djangorestframework
 djangorestframework-gis
 apache-airflow
 reportlab
+requests>=2.28.0

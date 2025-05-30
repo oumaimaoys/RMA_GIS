@@ -126,8 +126,27 @@ class CoverageScore(models.Model):
         unique_together = ('area', 'calculation_date')
    
 class CoverageStats(models.Model):
-    calc_date   = models.DateTimeField(auto_now=True)
-    raw_min     = models.FloatField()
-    raw_max     = models.FloatField()
-    raw_mean    = models.FloatField()
-    raw_stddev  = models.FloatField()
+    # raw score
+    raw_min     = models.FloatField(default=0.0)
+    raw_max     = models.FloatField(default=0.0)
+    raw_mean    = models.FloatField(default=0.0)
+    raw_stddev  = models.FloatField(default=0.0)
+
+    # per‐metric means & stddevs
+    pop_mean    = models.FloatField(default=0.0)
+    pop_std     = models.FloatField(default=0.0)
+    gap_mean    = models.FloatField(default=0.0)
+    gap_std     = models.FloatField(default=0.0)
+    veh_mean    = models.FloatField(default=0.0)
+    veh_std     = models.FloatField(default=0.0)
+    bank_mean   = models.FloatField(default=0.0)
+    bank_std    = models.FloatField(default=0.0)
+    comp_mean   = models.FloatField(default=0.0)
+    comp_std    = models.FloatField(default=0.0)
+    access_mean    = models.FloatField(null=True, blank=True,default=0.0)
+    access_std = models.FloatField(null=True, blank=True, default=0.0)
+
+    calc_date   = models.DateTimeField()
+
+    def __str__(self):
+        return f"Stats @ {self.calc_date}"
