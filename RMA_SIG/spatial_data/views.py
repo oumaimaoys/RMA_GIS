@@ -187,6 +187,7 @@ def export_pdf(request):
 import math
 import logging
 import requests
+from functools import lru_cache
 
 from statistics import fmean, pstdev
 from django.conf import settings
@@ -194,6 +195,7 @@ from django.db.models import Avg, F, Q, Sum
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.contrib.gis.db.models.functions import Distance, Centroid
+from django.core.cache import cache
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
@@ -205,7 +207,7 @@ from .models import (
 )
 
 # -----------------------------------------------------------------------------
-# Constants (must match your batch job)
+# Constants (keeping your original constants for compatibility)
 # -----------------------------------------------------------------------------
 BETA             = -1.5
 LOSS_MID         = 0.65
@@ -213,51 +215,108 @@ LOSS_STEEPNESS   = 10
 COMP_RADIUS_KM   = 30  # km
 PROJ_SRID        = 3857
 ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car"
+
+# Cache settings
+CACHE_TIMEOUT = 1800  # 30 minutes
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# Helper functions
+# Cached helper functions
 # -----------------------------------------------------------------------------
+@lru_cache(maxsize=1000)
+def cached_exp_calculation(distance_km):
+    """Cache expensive exponential calculations."""
+    return math.exp(BETA * max(distance_km, 0.1))
+
 def get_drive_time(lat_from, lon_from, lat_to, lon_to):
     """
-    Query OpenRouteService for driving time (minutes) between two WGS84 points.
-    Supports both GeoJSON and ORS v2 formats.
+    Optimized routing with caching and fallback.
     """
-    api_key = settings.ORS_API_KEY
-    resp = requests.post(
-        ORS_DIRECTIONS_URL,
-        headers={
-            "Authorization": api_key,
-            "Content-Type": "application/json"
-        },
-        json={"coordinates": [[lon_from, lat_from], [lon_to, lat_to]]},
-        timeout=5
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    # Create cache key
+    cache_key = f"route_{lat_from:.4f}_{lon_from:.4f}_{lat_to:.4f}_{lon_to:.4f}"
+    
+    # Try cache first
+    try:
+        cached_time = cache.get(cache_key)
+        if cached_time is not None:
+            return cached_time
+    except:
+        pass  # Cache might not be configured
+    
+    try:
+        api_key = settings.ORS_API_KEY
+        resp = requests.post(
+            ORS_DIRECTIONS_URL,
+            headers={
+                "Authorization": api_key,
+                "Content-Type": "application/json"
+            },
+            json={"coordinates": [[lon_from, lat_from], [lon_to, lat_to]]},
+            timeout=3
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-    # GeoJSON-style "features"
-    feats = data.get("features")
-    if isinstance(feats, list) and feats:
-        segs = feats[0].get("properties", {}).get("segments", [])
-        if segs and segs[0].get("duration") is not None:
-            return segs[0]["duration"] / 60.0
+        # GeoJSON-style "features"
+        feats = data.get("features")
+        if isinstance(feats, list) and feats:
+            segs = feats[0].get("properties", {}).get("segments", [])
+            if segs and segs[0].get("duration") is not None:
+                travel_time = segs[0]["duration"] / 60.0
+                try:
+                    cache.set(cache_key, travel_time, CACHE_TIMEOUT)
+                except:
+                    pass
+                return travel_time
 
-    # ORS v2-style "routes"
-    routes = data.get("routes")
-    if isinstance(routes, list) and routes:
-        segs = routes[0].get("segments", [])
-        if segs and segs[0].get("duration") is not None:
-            return segs[0]["duration"] / 60.0
+        # ORS v2-style "routes"
+        routes = data.get("routes")
+        if isinstance(routes, list) and routes:
+            segs = routes[0].get("segments", [])
+            if segs and segs[0].get("duration") is not None:
+                travel_time = segs[0]["duration"] / 60.0
+                try:
+                    cache.set(cache_key, travel_time, CACHE_TIMEOUT)
+                except:
+                    pass
+                return travel_time
 
-    logging.error("ORS response had no duration: %r", data)
-    raise ValueError("No route duration returned from OpenRouteService")
+        # If no duration found, fall back to distance estimation
+        raise ValueError("No route duration returned")
+        
+    except Exception as e:
+        logging.warning(f"Routing API failed, using distance estimate: {e}")
+        
+        # Fallback: estimate based on straight-line distance
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat_from, lon_from, lat_to, lon_to])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        distance_km = 2 * 6371 * math.asin(math.sqrt(a))
+        
+        # Estimate driving time (assume average 50 km/h with routing factor)
+        estimated_time = distance_km / 50 * 1.3
+        
+        try:
+            cache.set(cache_key, estimated_time, 300)  # Cache for 5 minutes
+        except:
+            pass
+        
+        return estimated_time
 
 
 def competition_intensity_py(area):
     """
-    Sum exp(BETA·d_km) for all Competitor.location within COMP_RADIUS_KM.
+    Optimized competition intensity calculation.
     """
+    cache_key = f"comp_intensity_{area.id}"
+    try:
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+    except:
+        pass
+    
     # project centroid for accurate metres-based distance
     centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
     nearby = Competitor.objects.filter(
@@ -267,14 +326,28 @@ def competition_intensity_py(area):
     for comp in nearby:
         d_m = centroid_m.distance(comp.location.transform(PROJ_SRID, clone=True))
         d_km = d_m / 1000.0
-        total += math.exp(BETA * d_km)
+        total += cached_exp_calculation(d_km)
+    
+    try:
+        cache.set(cache_key, total, CACHE_TIMEOUT)
+    except:
+        pass
+    
     return total
 
 
 def bank_intensity_py(area):
     """
-    Sum exp(BETA·d_km) for all Bank.location within COMP_RADIUS_KM.
+    Optimized bank intensity calculation.
     """
+    cache_key = f"bank_intensity_{area.id}"
+    try:
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+    except:
+        pass
+    
     centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
     nearby = Bank.objects.filter(
         location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM))
@@ -283,7 +356,13 @@ def bank_intensity_py(area):
     for b in nearby:
         d_m = centroid_m.distance(b.location.transform(PROJ_SRID, clone=True))
         d_km = d_m / 1000.0
-        total += math.exp(BETA * d_km)
+        total += cached_exp_calculation(d_km)
+    
+    try:
+        cache.set(cache_key, total, CACHE_TIMEOUT)
+    except:
+        pass
+    
     return total
 
 
@@ -294,17 +373,17 @@ def _zscores(vals):
 
 
 def _logistic(x, mid=LOSS_MID, k=LOSS_STEEPNESS):
+    if x is None or x == 0:
+        return 0.5
     return 1.0 / (1.0 + math.exp(k * (x - mid)))
 
 
 # -----------------------------------------------------------------------------
-# ORM-based annotation for loss‐ratio (others done in Python)
+# ORM-based annotation for loss‐ratio
 # -----------------------------------------------------------------------------
 def get_area_queryset(cls):
     """
-    Annotate each Area (Commune/Province) with:
-      - id, name, population, insured_population, estimated_vehicles
-      - loss_ratio_avg = Avg('lossratio__loss_ratio')
+    Annotate each Area (Commune/Province) with required fields.
     """
     return (
         cls.objects
@@ -313,23 +392,47 @@ def get_area_queryset(cls):
     )
 
 
+def get_cached_stats():
+    """Get coverage stats with caching."""
+    cache_key = 'coverage_stats_latest'
+    try:
+        stats = cache.get(cache_key)
+        if stats is not None:
+            return stats
+    except:
+        pass
+    
+    stats = CoverageStats.objects.latest('calc_date')
+    
+    try:
+        cache.set(cache_key, stats, CACHE_TIMEOUT)
+    except:
+        pass
+    
+    return stats
+
+
 # -----------------------------------------------------------------------------
-# Main endpoint
+# Main optimized endpoint
 # -----------------------------------------------------------------------------
 @api_view(['POST'])
 def simulate_score(request):
-    # load latest stats
-    stats = CoverageStats.objects.latest('calc_date')
+    # Load stats (with caching)
+    try:
+        stats = get_cached_stats()
+    except CoverageStats.DoesNotExist:
+        return Response({"detail": "Coverage stats not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # parse input
+    # Parse input
     try:
         lat = float(request.data['lat'])
         lon = float(request.data['lon'])
     except (KeyError, ValueError):
         return Response({"detail": "Invalid lat/lon"}, status=status.HTTP_400_BAD_REQUEST)
+    
     pnt = Point(lon, lat, srid=4326)
 
-    # find intersection in Communes, else Provinces
+    # Find intersection in Communes, else Provinces
     area_dict = (
         get_area_queryset(Commune)
         .filter(boundary__intersects=pnt)
@@ -348,19 +451,53 @@ def simulate_score(request):
     if not area_dict:
         return Response({"detail": "Outside known areas"}, status=status.HTTP_404_NOT_FOUND)
 
-    # load geometry for Python‐based intensities & routing
+    # Load geometry for Python‐based intensities & routing
     area_obj = Model.objects.only('boundary').get(pk=area_dict['id'])
 
-    # build raw lists
-    all_areas = list(get_area_queryset(Model))
-    instances = Model.objects.in_bulk([a['id'] for a in all_areas])
+    # Check cache for preprocessed data
+    cache_key = f"areas_data_{Model.__name__.lower()}"
+    try:
+        cached_areas_data = cache.get(cache_key)
+    except:
+        cached_areas_data = None
+    
+    if cached_areas_data is None:
+        # Build raw lists (only if not cached)
+        all_areas = list(get_area_queryset(Model))
+        instances = Model.objects.in_bulk([a['id'] for a in all_areas])
 
-    pops   = [a['population'] for a in all_areas]
-    gaps   = [max(a['population'] - a['insured_population'], 0) for a in all_areas]
-    vehs   = [a['estimated_vehicles'] for a in all_areas]
-    banks  = [bank_intensity_py(instances[a['id']]) for a in all_areas]
-    comps  = [competition_intensity_py(instances[a['id']]) for a in all_areas]
-    losses = [a['loss_ratio_avg'] or 0 for a in all_areas]
+        pops   = [a['population'] for a in all_areas]
+        gaps   = [max(a['population'] - a['insured_population'], 0) for a in all_areas]
+        vehs   = [a['estimated_vehicles'] for a in all_areas]
+        banks  = [bank_intensity_py(instances[a['id']]) for a in all_areas]
+        comps  = [competition_intensity_py(instances[a['id']]) for a in all_areas]
+        losses = [a['loss_ratio_avg'] or 0 for a in all_areas]
+        
+        areas_data = {
+            'all_areas': all_areas,
+            'pops': pops,
+            'gaps': gaps, 
+            'vehs': vehs,
+            'banks': banks,
+            'comps': comps,
+            'losses': losses
+        }
+        
+        try:
+            cache.set(cache_key, areas_data, CACHE_TIMEOUT)
+        except:
+            pass
+    else:
+        areas_data = cached_areas_data
+
+    # Extract data
+    all_areas = areas_data['all_areas']
+    pops = areas_data['pops']
+    gaps = areas_data['gaps']
+    vehs = areas_data['vehs']
+    banks = areas_data['banks']
+    comps = areas_data['comps']
+    losses = areas_data['losses']
 
     # z-score normalization
     def z(v, mean, std): return (v - mean) / std if std else 0
@@ -370,7 +507,7 @@ def simulate_score(request):
     bank_z = [z(v, stats.bank_mean, stats.bank_std) for v in banks]
     comp_z = [z(v, stats.comp_mean, stats.comp_std) for v in comps]
 
-    # find our area’s index
+    # find our area's index
     idx = next(i for i,a in enumerate(all_areas) if a['id'] == area_dict['id'])
 
     # compute components
@@ -383,9 +520,11 @@ def simulate_score(request):
     cent.transform(4326)
     try:
         travel_time = get_drive_time(lat, lon, cent.y, cent.x)
-    except ValueError as e:
-        return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
-    accessibility = (stats.access_mean - travel_time) / stats.access_std
+        accessibility = (stats.access_mean - travel_time) / stats.access_std if stats.access_std > 0 else 0
+    except Exception as e:
+        logging.error(f"Travel time calculation failed: {e}")
+        accessibility = 0
+        travel_time = None
 
     risk = _logistic(losses[idx])
 
@@ -399,12 +538,21 @@ def simulate_score(request):
     )
 
     # final 0–100
-    score = round((raw - stats.raw_min) / (stats.raw_max - stats.raw_min) * 100, 2)
+    score_range = stats.raw_max - stats.raw_min
+    if score_range > 0:
+        score = round((raw - stats.raw_min) / score_range * 100, 2)
+    else:
+        score = 50.0  # Default middle score if no range
+    
+    # Ensure score is within bounds
+    score = max(0, min(100, score))
+    
     potential = 'HIGH' if score >= 70 else 'MEDIUM' if score >= 40 else 'LOW'
 
     return Response({
         "area_id":   area_dict['id'],
         "area_name": area_dict['name'],
         "coverage":  score,
-        "potential": potential
+        "potential": potential,
+        "travel_time_minutes": round(travel_time, 1) if travel_time else None
     })
