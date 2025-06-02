@@ -461,23 +461,28 @@
       loadAgenciesWithinRegion(feature);
 
       const props = feature.properties;
-      const score      = props.coverage_score;        // number or undefined
-      const potential  = props.coverage_potential;
-      let name = props.name || props.Nom_Commun || "Inconnu";
-      let rma_count = props.rma_count || 0;
-      let pop  = props.population || props.Population;
-      let pop_insured = props.insured_population;
-      let vehicles = props.estimated_vehicles;
 
-      document.getElementById("region-name").textContent = name;
-      document.getElementById("region-score").textContent    =
-        score !== undefined ? score.toFixed(1) : "—";
-      document.getElementById("region-potential").textContent=
-          potential || "—";
-      document.getElementById("region-rma-count").textContent = rma_count;
-      document.getElementById("region-population").textContent = pop ? pop.toLocaleString() : "Donnée non disponible";
-      document.getElementById("region-insured-population").textContent = pop_insured ? pop_insured.toLocaleString() : "Donnée non disponible";
-      document.getElementById("region-vehicules").textContent = vehicles ? vehicles.toLocaleString() : "Donnée non disponible";
+      // Parse the raw “score” into a number, then guard with isNaN()
+      const rawScore = props.score;
+      const parsed   = parseFloat(rawScore);
+      const scoreText = (!isNaN(parsed)) ? parsed.toFixed(1) : "—";
+
+      // For “potential”, just fall back to “—” if it’s falsy
+      const potential = props.potential || "—";
+
+      const name        = props.name || props.Nom_Commun || "Inconnu";
+      const rma_count   = props.rma_count || 0;
+      const pop         = props.population || props.Population || 0;
+      const pop_insured = props.insured_population || 0;
+      const vehicles    = props.estimated_vehicles || 0;
+
+      document.getElementById("region-name").textContent           = name;
+      document.getElementById("region-score").textContent          = scoreText;
+      document.getElementById("region-potential").textContent      = potential;
+      document.getElementById("region-rma-count").textContent      = rma_count;
+      document.getElementById("region-population").textContent      = pop.toLocaleString();
+      document.getElementById("region-insured-population").textContent = pop_insured.toLocaleString();
+      document.getElementById("region-vehicules").textContent       = vehicles.toLocaleString();
 
       document.getElementById("info-card").style.display = "block";
     }
@@ -599,14 +604,14 @@ function buildScoreLayer(adminType, callback){
     fetch(SCORE_URL[adminType])
         .then(r=>{ if(!r.ok) throw Error(r.statusText); return r.json(); })
         .then(fc=>{
-            // Filter out features with invalid scores - using coverage_score instead of score
+            // Filter out features with invalid scores - using score instead of score
             const validScores = fc.features
-                .map(f => f.properties.coverage_score)
+                .map(f => f.properties.score)
                 .filter(score => score != null && !isNaN(score) && score !== '');
             
             // Check if we have any valid scores
             if (validScores.length === 0) {
-                throw new Error("Aucun coverage_score valide trouvé dans les données");
+                throw new Error("Aucun score valide trouvé dans les données");
             }
             
             const min = Math.min(...validScores);
@@ -617,10 +622,10 @@ function buildScoreLayer(adminType, callback){
                     weight: 1,
                     color: '#666',
                     fillOpacity: .8,
-                    fillColor: getScoreColor(f.properties.coverage_score, min, max)
+                    fillColor: getScoreColor(f.properties.score, min, max)
                 }),
                 onEachFeature: (f, l) => {
-                    const score = f.properties.coverage_score;
+                    const score = f.properties.score;
                     const scoreText = (score != null && !isNaN(score)) 
                         ? score.toFixed(1) 
                         : 'N/A';
@@ -766,11 +771,11 @@ rmaOnlyToggle.addEventListener('change', e => {
    *  SIMULATEUR : draggable marker + instant score
    * ----------------------------------------------------------------*/
   const simuBtn = document.getElementById('simulateur-btn');
-  let simuMarker = null;    // leaflet marker instance
-  let simuTooltip = null;   // where we drop the score
+  let simuMarker = null;
+  let simuTooltip = null;
 
   function enableSimuMode() {
-    // 1. Turn off other layers for clarity
+    // 1. Hide other layers
     if (typeof heatmapToggle !== 'undefined') {
       heatmapToggle.checked = false;
       heatmapActive = false;
@@ -780,7 +785,7 @@ rmaOnlyToggle.addEventListener('change', e => {
       if (typeof hideScoreLayer === 'function') hideScoreLayer();
     }
 
-    // 2. Create or re-add marker at map centre, with dragend handler
+    // 2. Add or reset draggable marker
     if (!simuMarker) {
       simuMarker = L.marker(map.getCenter(), { draggable: true })
         .addTo(map)
@@ -789,27 +794,24 @@ rmaOnlyToggle.addEventListener('change', e => {
       simuMarker.setLatLng(map.getCenter()).addTo(map);
     }
 
-    // **Do not** call onSimuDrop() here — wait for the first drag.
     simuBtn.classList.add('active');
   }
 
   function disableSimuMode() {
-    if (simuMarker) {
-      map.removeLayer(simuMarker);
-    }
+    if (simuMarker) map.removeLayer(simuMarker);
     if (simuTooltip) {
       map.closePopup(simuTooltip);
       simuTooltip = null;
     }
     simuBtn.classList.remove('active');
-    simuBtn.textContent = '➕ Nouveau site';  // reset button text
+    simuBtn.textContent = '➕ Nouveau site';
   }
 
   function onSimuDrop() {
     const { lat, lng } = simuMarker.getLatLng();
+    console.log("📍 Simulateur ➞ lat/lon:", lat, lng);
 
-    // loading state
-    simuBtn.textContent = '⏳…';
+    simuBtn.textContent = '⏳ Simulation...';
 
     fetch("{% url 'simulate-score' %}", {
       method: 'POST',
@@ -819,16 +821,40 @@ rmaOnlyToggle.addEventListener('change', e => {
       },
       body: JSON.stringify({ lat, lon: lng })
     })
-    .then(r => {
+    .then(async r => {
       if (!r.ok) {
-        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        const errorText = await r.text();
+        throw new Error(`HTTP ${r.status} – ${errorText}`);
       }
       return r.json();
     })
     .then(data => {
-      const html = `<strong>Score estimé</strong><br>
-                    Couverture : <b>${data.coverage.toFixed(1)}</b><br>
-                    Potentiel  : <b>${data.potential}</b>`;
+      const scoreValue = data.score; // Accessing the top-level score
+      const potentialCategory = data.overall_score.potential_category;
+      const travelTime = data.key_metrics.travel_time_to_centroid_minutes;
+      const areaName = data.area_info.name;
+
+      const html = `
+          <strong>📍 Simulation de site</strong><br>
+          Score : <b>${scoreValue !== null && scoreValue !== undefined ? scoreValue.toFixed(1) : 'N/A'}</b><br>
+          Potentiel : <b>${potentialCategory || 'N/A'}</b><br>
+          Temps d'accès : <b>${travelTime !== null && travelTime !== undefined ? travelTime.toFixed(1) : '–'} min</b><br>
+          <hr style="margin: 4px 0;">
+          <small style="font-size: 0.8em;">Zone : ${areaName || 'N/A'}</small>
+      `;
+
+      // Optional: include component scores
+      /*
+      const comp = data.component_scores;
+      html += `
+        <br><u>Composantes</u><br>
+        📈 Demande: ${comp.demand}<br>
+        ⚔️ Concurrence: ${comp.competition}<br>
+        💰 Économie: ${comp.economic}<br>
+        🚗 Accès: ${comp.accessibility}<br>
+        ⚠️ Risque: ${comp.risk}
+      `;
+      */
 
       if (simuTooltip) {
         simuTooltip.setContent(html).setLatLng([lat, lng]);
@@ -840,15 +866,15 @@ rmaOnlyToggle.addEventListener('change', e => {
       }
     })
     .catch(err => {
-      console.error('Simulator error:', err);
-      alert('Erreur simulateur\n' + err.message);
+      console.error('🛑 Simulateur erreur:', err);
+      alert('Erreur simulateur:\n' + err.message);
     })
     .finally(() => {
       simuBtn.textContent = '➕ Nouveau site';
     });
   }
 
-  // Toggle simulator on/off
+  // Toggle button behavior
   simuBtn.addEventListener('click', e => {
     e.preventDefault();
     if (simuMarker && map.hasLayer(simuMarker)) {
@@ -858,6 +884,7 @@ rmaOnlyToggle.addEventListener('change', e => {
     }
   });
 </script>
+
 <script>
   /* ---------------- CSRF helper ---------------- */
   // Better CSRF token retrieval

@@ -636,9 +636,9 @@ class CoverageScoreAdmin(admin.ModelAdmin):
 
 @admin.register(CoverageStats)
 class CoverageStatsAdmin(admin.ModelAdmin):
-    list_display = ('calc_date', 'pop_mean', 'pop_std', 'gap_mean', 'gap_std',
-                    'veh_mean', 'veh_std', 'bank_mean', 'bank_std', 'comp_mean', 'comp_std')
-    search_fields = ('calc_date',)
+    list_display = ('pop_mean', 'pop_std', 'gap_mean', 'gap_std',
+                    'veh_mean', 'veh_std')
+    search_fields = ('calculation_date',)
 
     def get_readonly_fields(self, request, obj=None):
-        return ['calc_date']  # Make calc_date read-only
+        return ['calculation_date']  # Make calc_date read-only

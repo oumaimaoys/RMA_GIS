@@ -47,7 +47,7 @@ INSTALLED_APPS = [
     'rest_framework_gis',
     'debug_toolbar',
     'frontend',
-    'spatial_data'
+    'spatial_data',
 ]
 
 MIDDLEWARE = [
