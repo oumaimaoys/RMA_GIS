@@ -245,7 +245,7 @@ class BankAdmin(BaseModelAdmin):
 
 @admin.register(Competitor)
 class CompetitorAdmin(BaseModelAdmin):
-    list_display = ('company_name', 'code_ACAPS', 'competitor_type', 'mandante', 'city')
+    list_display = ('agency_name', 'code_ACAPS', 'competitor_type', 'mandante', 'city')
     list_filter = ('competitor_type', 'mandante')
     search_fields = ('company_name', 'code_ACAPS', 'mandante', 'city',)
 
@@ -304,7 +304,7 @@ class CompetitorAdmin(BaseModelAdmin):
 
 @admin.register(Commune)
 class CommuneAdmin(admin.ModelAdmin):
-    list_display = ('name', 'population',  'insured_population', 'estimated_vehicles')
+    list_display = ('name', 'population',  'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/Commune/change_form.html"
@@ -430,7 +430,7 @@ class CommuneAdmin(admin.ModelAdmin):
     
 @admin.register(Province)
 class ProvinceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'population', 'insured_population', 'estimated_vehicles')
+    list_display = ('name', 'population', 'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/Province/change_form.html"
@@ -636,7 +636,8 @@ class CoverageScoreAdmin(admin.ModelAdmin):
 
 @admin.register(CoverageStats)
 class CoverageStatsAdmin(admin.ModelAdmin):
-    list_display = ('calc_date', 'raw_min', 'raw_max', 'raw_mean', 'raw_stddev')
+    list_display = ('calc_date', 'pop_mean', 'pop_std', 'gap_mean', 'gap_std',
+                    'veh_mean', 'veh_std', 'bank_mean', 'bank_std', 'comp_mean', 'comp_std')
     search_fields = ('calc_date',)
 
     def get_readonly_fields(self, request, obj=None):

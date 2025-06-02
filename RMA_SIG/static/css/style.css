@@ -13,7 +13,7 @@ nav {
   left: 0;
   width: 100%;
   z-index: 1000;        /* sit above everything else */
-  background-color: white;
+  background-color: #F5F5F5;
   box-shadow: 3px 3px 5px rgba(0,0,0,0.1);
 }
 nav ul{

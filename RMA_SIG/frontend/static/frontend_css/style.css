@@ -133,7 +133,7 @@ input:checked + .slider:before {
 .search-box button:hover{opacity:1;}
 
 .sim-btn{
-  background:#27ae60;color:#fff;font-weight:600;
+  background:#9494AC;color:#fff;font-weight:600;
   border:none;border-radius:20px;padding:6px 18px;cursor:pointer;
 }
-.sim-btn.active{background:#c0392b;}      /* red when active (cancel) */
+.sim-btn.active{background:#28965A;}      /* red when active (cancel) */

@@ -4,8 +4,8 @@ from datetime import datetime
 import requests
 import logging
 
-def trigger_django_scoring():
-    url = "http://django:8000/spatial/api/run-score/"
+def trigger_django_stats():
+    url = "http://django:8000/spatial/api/run-stats"
     logging.info(f"👉 POSTing to {url}")
     try:
         resp = requests.post(url, json={}, timeout=240)
@@ -16,7 +16,7 @@ def trigger_django_scoring():
         logging.error("❌ Request failed", exc_info=True)
         raise
 with DAG(
-    dag_id='calculate_scores_dag',
+    dag_id='calculate_stats_dag',
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,
     catchup=False,
@@ -24,8 +24,8 @@ with DAG(
 ) as dag:
 
     trigger_score = PythonOperator(
-        task_id='trigger_score_api',
-        python_callable=trigger_django_scoring,
+        task_id='trigger_stats_api',
+        python_callable=trigger_django_stats,
         dag=dag,
     )
     trigger_score

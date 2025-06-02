@@ -183,7 +183,6 @@ def export_pdf(request):
                         filename="RMA_report.pdf")
 
 # spatial_data/views.py
-
 import math
 import logging
 import requests
@@ -219,14 +218,6 @@ ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car
 # Cache settings
 CACHE_TIMEOUT = 1800  # 30 minutes
 # -----------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-# Cached helper functions
-# -----------------------------------------------------------------------------
-@lru_cache(maxsize=1000)
-def cached_exp_calculation(distance_km):
-    """Cache expensive exponential calculations."""
-    return math.exp(BETA * max(distance_km, 0.1))
 
 def get_drive_time(lat_from, lon_from, lat_to, lon_to):
     """
@@ -305,73 +296,6 @@ def get_drive_time(lat_from, lon_from, lat_to, lon_to):
         return estimated_time
 
 
-def competition_intensity_py(area):
-    """
-    Optimized competition intensity calculation.
-    """
-    cache_key = f"comp_intensity_{area.id}"
-    try:
-        cached_result = cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-    except:
-        pass
-    
-    # project centroid for accurate metres-based distance
-    centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
-    nearby = Competitor.objects.filter(
-        location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM))
-    )
-    total = 0.0
-    for comp in nearby:
-        d_m = centroid_m.distance(comp.location.transform(PROJ_SRID, clone=True))
-        d_km = d_m / 1000.0
-        total += cached_exp_calculation(d_km)
-    
-    try:
-        cache.set(cache_key, total, CACHE_TIMEOUT)
-    except:
-        pass
-    
-    return total
-
-
-def bank_intensity_py(area):
-    """
-    Optimized bank intensity calculation.
-    """
-    cache_key = f"bank_intensity_{area.id}"
-    try:
-        cached_result = cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-    except:
-        pass
-    
-    centroid_m = area.boundary.centroid.transform(PROJ_SRID, clone=True)
-    nearby = Bank.objects.filter(
-        location__distance_lte=(area.boundary, D(km=COMP_RADIUS_KM))
-    )
-    total = 0.0
-    for b in nearby:
-        d_m = centroid_m.distance(b.location.transform(PROJ_SRID, clone=True))
-        d_km = d_m / 1000.0
-        total += cached_exp_calculation(d_km)
-    
-    try:
-        cache.set(cache_key, total, CACHE_TIMEOUT)
-    except:
-        pass
-    
-    return total
-
-
-def _zscores(vals):
-    μ = fmean(vals)
-    σ = pstdev(vals) or 1.0
-    return [(v - μ) / σ for v in vals]
-
-
 def _logistic(x, mid=LOSS_MID, k=LOSS_STEEPNESS):
     if x is None or x == 0:
         return 0.5
@@ -379,15 +303,18 @@ def _logistic(x, mid=LOSS_MID, k=LOSS_STEEPNESS):
 
 
 # -----------------------------------------------------------------------------
-# ORM-based annotation for loss‐ratio
+# Optimized ORM-based annotation using stored intensities
 # -----------------------------------------------------------------------------
 def get_area_queryset(cls):
     """
-    Annotate each Area (Commune/Province) with required fields.
+    Annotate each Area (Commune/Province) with required fields including stored intensities.
     """
     return (
         cls.objects
-           .values('id', 'name', 'population', 'insured_population', 'estimated_vehicles')
+           .values(
+               'id', 'name', 'population', 'insured_population', 'estimated_vehicles',
+               'bank_intensity', 'competition_intensity'  # Use stored values
+           )
            .annotate(loss_ratio_avg=Avg('lossratio__loss_ratio'))
     )
 
@@ -413,7 +340,7 @@ def get_cached_stats():
 
 
 # -----------------------------------------------------------------------------
-# Main optimized endpoint
+# Main optimized endpoint using stored intensities
 # -----------------------------------------------------------------------------
 @api_view(['POST'])
 def simulate_score(request):
@@ -451,7 +378,7 @@ def simulate_score(request):
     if not area_dict:
         return Response({"detail": "Outside known areas"}, status=status.HTTP_404_NOT_FOUND)
 
-    # Load geometry for Python‐based intensities & routing
+    # Load geometry for routing (only need boundary for centroid)
     area_obj = Model.objects.only('boundary').get(pk=area_dict['id'])
 
     # Check cache for preprocessed data
@@ -462,15 +389,15 @@ def simulate_score(request):
         cached_areas_data = None
     
     if cached_areas_data is None:
-        # Build raw lists (only if not cached)
+        # Build raw lists using stored intensities (much faster!)
         all_areas = list(get_area_queryset(Model))
-        instances = Model.objects.in_bulk([a['id'] for a in all_areas])
 
-        pops   = [a['population'] for a in all_areas]
-        gaps   = [max(a['population'] - a['insured_population'], 0) for a in all_areas]
-        vehs   = [a['estimated_vehicles'] for a in all_areas]
-        banks  = [bank_intensity_py(instances[a['id']]) for a in all_areas]
-        comps  = [competition_intensity_py(instances[a['id']]) for a in all_areas]
+        # Extract data directly from database values (no Python calculations needed)
+        pops   = [a['population'] or 0 for a in all_areas]
+        gaps   = [max((a['population'] or 0) - (a['insured_population'] or 0), 0) for a in all_areas]
+        vehs   = [a['estimated_vehicles'] or 0 for a in all_areas]
+        banks  = [a['bank_intensity'] or 0 for a in all_areas]  # Use stored values
+        comps  = [a['competition_intensity'] or 0 for a in all_areas]  # Use stored values
         losses = [a['loss_ratio_avg'] or 0 for a in all_areas]
         
         areas_data = {
@@ -499,8 +426,10 @@ def simulate_score(request):
     comps = areas_data['comps']
     losses = areas_data['losses']
 
-    # z-score normalization
-    def z(v, mean, std): return (v - mean) / std if std else 0
+    # z-score normalization using stored stats
+    def z(v, mean, std): 
+        return (v - mean) / std if std and std > 0 else 0
+    
     pop_z  = [z(v, stats.pop_mean,  stats.pop_std)  for v in pops]
     gap_z  = [z(v, stats.gap_mean,  stats.gap_std)  for v in gaps]
     veh_z  = [z(v, stats.veh_mean,  stats.veh_std)  for v in vehs]
@@ -510,23 +439,45 @@ def simulate_score(request):
     # find our area's index
     idx = next(i for i,a in enumerate(all_areas) if a['id'] == area_dict['id'])
 
-    # compute components
-    demand      = 0.35 * pop_z[idx]   + 0.35 * gap_z[idx] + 0.30 * veh_z[idx]
-    competition = -comp_z[idx]
-    economic    = bank_z[idx]
+    # Get the current area's stored intensity values
+    current_bank_intensity = area_dict['bank_intensity'] or 0
+    current_comp_intensity = area_dict['competition_intensity'] or 0
+    current_population = area_dict['population'] or 0
+    current_insured = area_dict['insured_population'] or 0
+    current_vehicles = area_dict['estimated_vehicles'] or 0
+    current_gap = max(current_population - current_insured, 0)
+
+    # Calculate z-scores for current area using stored stats
+    current_pop_z = z(current_population, stats.pop_mean, stats.pop_std)
+    current_gap_z = z(current_gap, stats.gap_mean, stats.gap_std)
+    current_veh_z = z(current_vehicles, stats.veh_mean, stats.veh_std)
+    current_bank_z = z(current_bank_intensity, stats.bank_mean, stats.bank_std)
+    current_comp_z = z(current_comp_intensity, stats.comp_mean, stats.comp_std)
+
+    # compute components using current area's values
+    demand      = 0.35 * current_pop_z + 0.35 * current_gap_z + 0.30 * current_veh_z
+    competition = -current_comp_z  # Negative because higher competition = lower score
+    economic    = current_bank_z   # Higher bank presence = higher score
 
     # compute routing‐driven accessibility
     cent = area_obj.boundary.centroid.clone()
     cent.transform(4326)
     try:
         travel_time = get_drive_time(lat, lon, cent.y, cent.x)
-        accessibility = (stats.access_mean - travel_time) / stats.access_std if stats.access_std > 0 else 0
+        # Use access stats if available, otherwise default calculation
+        if hasattr(stats, 'access_mean') and hasattr(stats, 'access_std') and stats.access_std > 0:
+            accessibility = (stats.access_mean - travel_time) / stats.access_std
+        else:
+            # Fallback: normalize travel time (assume 30min average, 15min std)
+            accessibility = (30 - travel_time) / 15
     except Exception as e:
         logging.error(f"Travel time calculation failed: {e}")
         accessibility = 0
         travel_time = None
 
-    risk = _logistic(losses[idx])
+    # Risk calculation using current area's loss ratio
+    current_loss_ratio = area_dict.get('loss_ratio_avg') or 0
+    risk = _logistic(current_loss_ratio)
 
     # raw weighted score
     raw = (
@@ -537,12 +488,16 @@ def simulate_score(request):
         0.20 * risk
     )
 
-    # final 0–100
-    score_range = stats.raw_max - stats.raw_min
-    if score_range > 0:
-        score = round((raw - stats.raw_min) / score_range * 100, 2)
+    # final 0–100 using stored min/max if available
+    if hasattr(stats, 'raw_max') and hasattr(stats, 'raw_min'):
+        score_range = stats.raw_max - stats.raw_min
+        if score_range > 0:
+            score = round((raw - stats.raw_min) / score_range * 100, 2)
+        else:
+            score = 50.0  # Default middle score if no range
     else:
-        score = 50.0  # Default middle score if no range
+        # Fallback normalization (assume typical range of -3 to +3 for z-scores)
+        score = round(max(0, min(100, (raw + 3) / 6 * 100)), 2)
     
     # Ensure score is within bounds
     score = max(0, min(100, score))
@@ -554,5 +509,29 @@ def simulate_score(request):
         "area_name": area_dict['name'],
         "coverage":  score,
         "potential": potential,
-        "travel_time_minutes": round(travel_time, 1) if travel_time else None
+        "travel_time_minutes": round(travel_time, 1) if travel_time else None,
+        "components": {  # Add breakdown for debugging
+            "demand": round(demand, 3),
+            "competition": round(competition, 3),
+            "economic": round(economic, 3),
+            "accessibility": round(accessibility, 3),
+            "risk": round(risk, 3),
+            "raw_score": round(raw, 3)
+        },
+        "area_stats": {  # Add current area stats for debugging
+            "population": current_population,
+            "coverage_gap": current_gap,
+            "vehicles": current_vehicles,
+            "bank_intensity": round(current_bank_intensity, 4),
+            "competition_intensity": round(current_comp_intensity, 4),
+            "loss_ratio": current_loss_ratio
+        }
     })
+
+@api_view(['POST'])
+def run_stats(request):
+    try:
+        call_command('calculate_stats')
+        return Response({"message": "Intensity and coverage stats calculation triggered."})
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

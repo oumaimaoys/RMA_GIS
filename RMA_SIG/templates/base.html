@@ -23,6 +23,8 @@
     rel="stylesheet"
     href="{% static 'css/style.css' %}"
   >
+  <link rel="icon" href="{% static 'assets/rma_sig_logo.png' %}" type="image/x-icon">
+
 
   {# allow child templates to inject extra <head> tags #}
   {% block head %}{% endblock %}
@@ -39,7 +41,11 @@
 
     </ul>
     <ul>
-      <li><a href="{% url 'home'%}">RMA SIG</a></li>
+      <li>
+        <a href="{% url 'home' %}">
+          <img src="{% static 'assets/rma_sig_logo.png' %}" alt="RMA SIG Logo" style="height: 32px;">
+        </a>
+      </li>
       <li class="hideOnMobile"><a href="{% url 'home'%}">home</a></li>
       <li class="hideOnMobile"><a href="{% url 'map'%}">map</a></li>
       <li class="hideOnMobile"><a href="{% url 'logout'%}">logout</a></li>

@@ -58,7 +58,7 @@ class Bank(models.Model):
 class Competitor(models.Model):
     """Competitor locations"""
     code_ACAPS = models.CharField(max_length=50, unique=True)
-    company_name = models.CharField(max_length=255)
+    agency_name = models.CharField(max_length=255)
     mandante = models.CharField(max_length=255)
     competitor_type = models.CharField(max_length=50, choices=[
         ('AGENT', 'agent'),
@@ -81,6 +81,8 @@ class Area(models.Model):
     estimated_vehicles = models.IntegerField(default=0, editable=False, serialize=True)
     competition_count = models.IntegerField(default=0, editable=False, serialize=True)
     bank_count = models.IntegerField(default=0, editable=False, serialize=True)
+    bank_intensity = models.FloatField(default=0.0, editable=False, serialize=True)
+    competition_intensity = models.FloatField(default=0.0, editable=False, serialize=True)
 
     def save(self, *args, **kwargs):
         # recalc before saving
@@ -126,12 +128,6 @@ class CoverageScore(models.Model):
         unique_together = ('area', 'calculation_date')
    
 class CoverageStats(models.Model):
-    # raw score
-    raw_min     = models.FloatField(default=0.0)
-    raw_max     = models.FloatField(default=0.0)
-    raw_mean    = models.FloatField(default=0.0)
-    raw_stddev  = models.FloatField(default=0.0)
-
     # per‐metric means & stddevs
     pop_mean    = models.FloatField(default=0.0)
     pop_std     = models.FloatField(default=0.0)
@@ -143,8 +139,7 @@ class CoverageStats(models.Model):
     bank_std    = models.FloatField(default=0.0)
     comp_mean   = models.FloatField(default=0.0)
     comp_std    = models.FloatField(default=0.0)
-    access_mean    = models.FloatField(null=True, blank=True,default=0.0)
-    access_std = models.FloatField(null=True, blank=True, default=0.0)
+    
 
     calc_date   = models.DateTimeField()
 
