@@ -1,6 +1,8 @@
 from django.contrib.gis.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone # For default timestamps
+from decimal import Decimal            # optional but keeps full precision
+from django.core.exceptions import ObjectDoesNotExist
 
 # --- Your existing models (RMAOffice, RMABGD, RMAAgent, manager, Bank, Competitor) ---
 # These seem fine for their purpose and are mostly used as data sources
@@ -77,6 +79,13 @@ class Competitor(models.Model):
         # return self.company_name # Original had company_name, changed to agency_name
         return f"{self.agency_name} ({self.mandante})"
 
+class RegionAdministrative(models.Model):
+    """Administrative regions, e.g., Provinces or larger areas."""
+    name = models.CharField(max_length=255, unique=True)
+    provinces = models.ManyToManyField('Province', related_name='regions', blank=True, help_text="Provinces within this region")
+
+    def __str__(self):
+        return self.name
 
 # --- Core Area Model and its derivatives ---
 class Area(models.Model):
@@ -110,9 +119,23 @@ class Area(models.Model):
         Call this method explicitly when underlying data changes, or in save().
         """
         # Basic estimations (these formulas should be validated/improved)
-        self.estimated_vehicles = int(self.population * Variables.objects.get(name="vehicles_factor")) # This factor needs to be robust
-        self.insured_population = int(self.population * Variables.objects.get(name="insurable_population_ratio") ) # This factor needs to be robust
+        try:
+            vf = Decimal(
+                Variables.objects.get(name="vehicles_factor").value
+            )
+        except ObjectDoesNotExist:
+            vf = Decimal("0")                  # sensible default or raise
 
+        try:
+            ipr = Decimal(
+                Variables.objects.get(name="insurable_population_ratio").value
+            )
+        except ObjectDoesNotExist:
+            ipr = Decimal("0")
+
+        # Compute the derived columns
+        self.estimated_vehicles   = int(Decimal(self.population) * vf)
+        self.insured_population   = int(Decimal(self.population) * ipr)
         if self.boundary:
             # Ensure boundary is in a planar projection for area calculation (e.g., a local UTM zone or Web Mercator)
             # For simplicity, if your boundary SRID allows area calculation directly, use it.
@@ -229,6 +252,8 @@ class CoverageScore(models.Model):
     accessibility_score = models.FloatField(null=True, blank=True)
     risk_score = models.FloatField(null=True, blank=True)
     travel_time_to_centroid_minutes = models.FloatField(null=True, blank=True)
+    rma_office_performance_score = models.FloatField(null=True, blank=True, help_text="Component score from nearby RMA office performance (0-100)")
+
 
     # Input parameters at the time of calculation (optional, for reproducibility)
     # latitude_input = models.FloatField(null=True, blank=True)
@@ -266,6 +291,8 @@ class CoverageStats(models.Model):
     comp_intensity_std    = models.FloatField(default=0.0, verbose_name="Competition Intensity Std Dev")
     loss_ratio_mean = models.FloatField(default=0.0, verbose_name="Loss Ratio Mean") # Added
     loss_ratio_std  = models.FloatField(default=0.0, verbose_name="Loss Ratio Std Dev") # Added
+    rma_office_influence_mean = models.FloatField(default=0.0, null=True, blank=True)
+    rma_office_influence_std = models.FloatField(default=0.0, null=True, blank=True)
 
     # --- NEW FIELDS for new metrics ---
     market_potential_mean = models.FloatField(default=0.0, null=True, blank=True) # For 'market_potential_untapped'

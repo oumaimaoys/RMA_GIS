@@ -25,9 +25,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
+from typing import Optional
+from django.utils import timezone
+
 from .models import (
     Province, Commune, RMAOffice, Competitor,
-    CoverageScore, LossRatio, Area, CoverageStats
+    CoverageScore, LossRatio, Area, CoverageStats, CA
 )
 from .serializers import (
     ProvinceSerializer, CommuneSerializer,
@@ -54,6 +57,20 @@ from .serializers import (
     RMAOfficeSerializer,
     CoverageScoreSerializer,
 )
+
+SIMULATION_WEIGHTS = {
+    "demand": 0.25,        # Adjusted
+    "competition": 0.15,   # Adjusted
+    "economic": 0.10,      # Adjusted
+    "accessibility": 0.20,
+    "risk": 0.15,
+    "rma_office_performance": 0.15, # New component
+}
+
+PROJ_SRID = 3857 # For projecting points for distance calculations if not using DB Distance
+RMA_OFFICE_INFLUENCE_RADIUS_KM = 40
+RMA_OFFICE_BETA_DECAY = -1.0
+NUM_YEARS_CA_FOR_AVG = 3
 
 # ----------------------------------------------------------------------
 # helpers
@@ -509,20 +526,113 @@ def generate_recommendations(final_score, demand, competition, economic, accessi
         recs.append("Overall profile appears balanced. Proceed with standard operational planning.")
     return recs
 
+# spatial_data/views.py
+
+# ... (keep existing imports and helper functions like get_area_queryset_values,
+# get_precalculated_stats, calculate_percentile_score, calculate_z_score_based_score,
+# calculate_demand_score, calculate_competition_score, calculate_economic_score,
+# calculate_risk_score, get_drive_time, calculate_accessibility_score, generate_recommendations)
+
+# --- NEW HELPER FUNCTION for RMA Office CA Influence ---
+
+def get_rma_office_avg_ca(office: RMAOffice, num_years: int) -> Optional[float]:
+    """
+    Calculates the average CA for a given RMAOffice for the last num_years.
+    """
+    current_year = timezone.now().year
+    years_to_consider = list(range(current_year - num_years, current_year))
+
+    recent_ca_values = CA.objects.filter(
+        agency=office,
+        year__in=years_to_consider
+    ).order_by('-year').values_list('CA_value', flat=True)[:num_years]
+
+    valid_ca_values = [float(ca) for ca in recent_ca_values if ca is not None and float(ca) > 0]
+
+    if valid_ca_values:
+        return sum(valid_ca_values) / len(valid_ca_values)
+    return None
+
+
+def calculate_rma_office_proximity_influence(
+    target_point: Point, # The simulated point (lat, lon), SRID 4326
+    radius_km: float,
+    beta_decay: float,
+    num_ca_years: int
+) -> float:
+    """
+    Calculates the revenue-weighted proximity influence from nearby RMA offices
+    to the target_point.
+    target_point is expected to be in SRID 4326.
+    """
+    if target_point.srid != 4326:
+        target_point = target_point.transform(4326, clone=True)
+
+    # Transform target_point to a projection suitable for distance calculation (e.g., PROJ_SRID)
+    # if not using database Distance function which handles spheroid calcs.
+    target_point_projected = target_point.transform(PROJ_SRID, clone=True)
+    
+    # Fetch RMA offices within a broader bounding box first for efficiency,
+    # then filter by precise distance.
+    # For simplicity here, we'll fetch all and filter, but for production,
+    # a spatial query with a buffer around target_point would be better.
+    
+    nearby_offices = RMAOffice.objects.filter(location__isnull=False)
+    # A more efficient query would be:
+    # buffer_degrees = radius_km / 111.0 # Approximate conversion for filtering
+    # search_buffer = target_point.buffer(buffer_degrees)
+    # nearby_offices = RMAOffice.objects.filter(location__isnull=False, location__within=search_buffer)
+    
+    total_influence = 0.0
+
+    for office in nearby_offices:
+        avg_ca = get_rma_office_avg_ca(office, num_ca_years)
+        if avg_ca and avg_ca > 0 and office.location:
+            office_location_projected = office.location.transform(PROJ_SRID, clone=True)
+            distance_m = target_point_projected.distance(office_location_projected)
+            distance_km = distance_m / 1000.0
+
+            if distance_km <= radius_km:
+                total_influence += avg_ca * math.exp(beta_decay * distance_km)
+    
+    return total_influence
+
+
+def calculate_rma_office_performance_score(raw_influence_value: float, global_stats: Optional[CoverageStats]):
+    """
+    Calculates the 0-100 score for RMA Office Performance based on raw influence.
+    Uses Z-score normalization if global_stats are available.
+    """
+    if global_stats and \
+       global_stats.rma_office_influence_mean is not None and \
+       global_stats.rma_office_influence_std is not None:
+        
+        # Higher influence is better
+        return calculate_z_score_based_score(
+            raw_influence_value,
+            global_stats.rma_office_influence_mean,
+            global_stats.rma_office_influence_std,
+            higher_is_better=True
+        )
+    logger.warning("RMA Office Performance score defaulting to 50 due to missing global stats for normalization.")
+    return 50.0 # Default if stats aren't available
+
+
 @api_view(["POST"])
+@permission_classes([IsAuthenticated]) # Or AllowAny if for local/testing
 def simulate_score(request):
-    # ... (lat, lon, pnt validation - unchanged) ...
     try:
         lat = float(request.data.get("lat"))
         lon = float(request.data.get("lon"))
-        pnt = Point(lon, lat, srid=4326)
+        pnt = Point(lon, lat, srid=4326) # User input is WGS84
     except (KeyError, ValueError, TypeError, AttributeError):
         return Response(
             {"detail": "Invalid or missing 'lat'/'lon' parameters."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # ... (area determination logic: area_dict, Model, area_model_name, area_id_from_dict, area_name_from_dict - unchanged) ...
+    # ... (area determination logic: area_dict, Model, area_model_name, etc. - unchanged from your snippet) ...
+    # This part determines which Commune or Province the point falls into.
     area_dict = get_area_queryset_values(Commune).filter(boundary__intersects=pnt).first()
     Model = Commune
     if not area_dict:
@@ -536,99 +646,106 @@ def simulate_score(request):
         )
 
     area_model_name = Model.__name__
-    area_id_from_dict = area_dict["id"]
+    area_id_from_dict = area_dict["id"] # PK of Commune/Province
     area_name_from_dict = area_dict["area_ptr__name"]
 
-
-    # ... (percentile_data_collection caching logic - unchanged) ...
+    # --- Percentile Data Collection (for demand score) ---
+    # ... (percentile_data_collection caching logic - unchanged from your snippet) ...
     percentile_cache_key = f"percentile_data_{area_model_name.lower()}"
     percentile_data_collection = cache.get(percentile_cache_key)
-
     if percentile_data_collection is None:
-        logger.info(f"Cache miss for {percentile_cache_key}. Recalculating percentile data.")
+        logger.info(f"Cache miss for {percentile_cache_key}. Recalculating percentile data for {area_model_name}.")
         all_area_records_values = list(get_area_queryset_values(Model))
-        
         if not all_area_records_values:
             logger.error(f"No data found for {area_model_name} areas to calculate percentiles.")
-            return Response(
-                {"detail": f"Insufficient data for {area_model_name} percentile calculation."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
+            return Response({"detail": f"Insufficient data for {area_model_name} percentile calculation."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         percentile_data_collection = {
             "populations": [a.get("area_ptr__population") for a in all_area_records_values],
-            "gaps": [
-                max(0, (a.get("area_ptr__population") or 0) - (a.get("area_ptr__insured_population") or 0))
-                for a in all_area_records_values
-            ],
+            "gaps": [max(0, (a.get("area_ptr__population") or 0) - (a.get("area_ptr__insured_population") or 0)) for a in all_area_records_values],
             "vehicles": [a.get("area_ptr__estimated_vehicles") for a in all_area_records_values],
             "market_potentials_untapped": [
                 (((pop or 0) - (ins or 0)) / (pop or 1)) * 100
                 if (pop := a.get("area_ptr__population")) and pop > 0 else 0.0
-                for a in all_area_records_values
-                for ins in [a.get("area_ptr__insured_population")]
+                for a in all_area_records_values for ins in [a.get("area_ptr__insured_population")]
             ],
         }
-        cache.set(percentile_cache_key, percentile_data_collection, timeout=3600)
+        cache.set(percentile_cache_key, percentile_data_collection, timeout=3600) # Cache for 1 hour
         logger.info(f"Cached percentile data for {area_model_name}.")
 
-    # ... (global_stats fetching - unchanged) ...
-    global_stats = get_precalculated_stats(area_model_name)
 
-    # ... (current area specifics extraction: current_population, ..., current_loss_ratio - unchanged) ...
+    # --- Global Stats (for Z-score normalizations) ---
+    global_stats = get_precalculated_stats(area_model_name) # Expects CoverageStats for 'Commune' or 'Province'
+
+    # --- Current Area Specifics (extracted from area_dict) ---
+    # ... (current_population, current_gap, etc. - unchanged from your snippet) ...
     current_population = area_dict.get("area_ptr__population") or 0
     current_insured = area_dict.get("area_ptr__insured_population") or 0
     current_vehicles = area_dict.get("area_ptr__estimated_vehicles") or 0
     current_gap = max(0, current_population - current_insured)
-    current_market_untapped = (
-        ((current_population - current_insured) / current_population) * 100
-        if current_population > 0 else 0.0
-    )
-    current_bank_intensity = area_dict.get("area_ptr__bank_intensity")
-    current_comp_intensity = area_dict.get("area_ptr__competition_intensity")
+    current_market_untapped = (((current_population - current_insured) / current_population) * 100) if current_population > 0 else 0.0
+    current_bank_intensity = area_dict.get("area_ptr__bank_intensity") # This is likely an area-wide stat
+    current_comp_intensity = area_dict.get("area_ptr__competition_intensity") # Also area-wide
     current_loss_ratio = area_dict.get("loss_ratio_avg")
 
-    # ... (component score calculations: demand_score, ..., risk_score - unchanged) ...
+
+    # --- Component Score Calculations ---
     demand_score = calculate_demand_score(
         current_population, current_gap, current_vehicles, current_market_untapped,
         percentile_data_collection["populations"], percentile_data_collection["gaps"],
         percentile_data_collection["vehicles"], percentile_data_collection["market_potentials_untapped"]
     )
+    # Competition and Economic scores in your snippet use area-wide intensities.
+    # For a point-specific simulation, you might want to calculate these intensities
+    # dynamically around the point, similar to how we're doing RMA influence.
+    # However, sticking to your current logic for these for now:
     competition_score = calculate_competition_score(current_comp_intensity, global_stats)
-    economic_score = calculate_economic_score(current_bank_intensity, global_stats)
+    economic_score = calculate_economic_score(current_bank_intensity, global_stats) # Assumes Bank model is available
     risk_score = calculate_risk_score(current_loss_ratio, global_stats)
 
-
-    # ... (accessibility score calculation: travel_time_minutes, accessibility_score - unchanged) ...
+    # --- Accessibility Score (point-specific) ---
+    # ... (accessibility calculation - unchanged from your snippet) ...
     travel_time_minutes = None
-    accessibility_score = 30.0
+    accessibility_score_val = 30.0 # Default
     try:
+        # Fetch the specific Commune/Province instance to get its boundary centroid
         area_instance = Model.objects.only("boundary").get(pk=area_id_from_dict)
         if area_instance.boundary:
             centroid_geom = area_instance.boundary.centroid 
-            if centroid_geom.srid != 4326:
-                centroid_geom.transform(4326)
-            travel_time_minutes = get_drive_time(lat, lon, centroid_geom.y, centroid_geom.x)
-            accessibility_score = calculate_accessibility_score(travel_time_minutes)
-        else:
-            logger.warning(f"Area {area_name_from_dict} (ID: {area_id_from_dict}) has no boundary for centroid calculation.")
+            if centroid_geom.srid != 4326: # Ensure centroid is WGS84 for get_drive_time
+                centroid_geom.transform(4326, clone=True)
+            travel_time_minutes = get_drive_time(lat, lon, centroid_geom.y, centroid_geom.x) # lat, lon are WGS84
+            accessibility_score_val = calculate_accessibility_score(travel_time_minutes)
     except Model.DoesNotExist:
         logger.error(f"Failed to refetch {area_model_name} (ID: {area_id_from_dict}) for centroid.")
     except Exception as e:
         logger.error(f"Error in accessibility calculation for {area_name_from_dict}: {e}", exc_info=True)
 
 
-    # ... (final_score calculation - unchanged) ...
+    # --- RMA Office Performance Score (point-specific) ---
+    raw_rma_influence = calculate_rma_office_proximity_influence(
+        pnt, # The simulated Point(lon, lat, srid=4326)
+        RMA_OFFICE_INFLUENCE_RADIUS_KM,
+        RMA_OFFICE_BETA_DECAY,
+        NUM_YEARS_CA_FOR_AVG
+    )
+    rma_office_performance_score = calculate_rma_office_performance_score(raw_rma_influence, global_stats)
+    logger.info(f"Simulated point ({lat},{lon}): Raw RMA Influence={raw_rma_influence:.2f}, Score={rma_office_performance_score:.1f}")
+
+
+    # --- Final Composite Score ---
     final_score = (
-        WEIGHTS["demand"] * demand_score +
-        WEIGHTS["competition"] * competition_score +
-        WEIGHTS["economic"] * economic_score +
-        WEIGHTS["accessibility"] * accessibility_score +
-        WEIGHTS["risk"] * risk_score
+        SIMULATION_WEIGHTS["demand"] * demand_score +
+        SIMULATION_WEIGHTS["competition"] * competition_score +
+        SIMULATION_WEIGHTS["economic"] * economic_score +
+        SIMULATION_WEIGHTS["accessibility"] * accessibility_score_val + # Use the calculated one
+        SIMULATION_WEIGHTS["risk"] * risk_score +
+        SIMULATION_WEIGHTS["rma_office_performance"] * rma_office_performance_score # Add new component
     )
     final_score = round(max(0.0, min(100.0, final_score)), 1)
 
-    # ... (potential_category, market_size_category, etc. - unchanged) ...
+
+    # --- Categorization and Recommendations ---
+    # ... (potential_category, market_size_category, etc. - unchanged from your snippet) ...
     if final_score >= EXCELLENT_THRESHOLD: potential_category = "EXCELLENT"
     elif final_score >= GOOD_THRESHOLD: potential_category = "GOOD"
     elif final_score >= MEDIUM_THRESHOLD: potential_category = "MEDIUM"
@@ -637,14 +754,21 @@ def simulate_score(request):
     market_size_category = "LARGE" if current_population >= 50000 else \
                            "MEDIUM" if current_population >= 15000 else "SMALL"
     competition_level_category = "LOW" if competition_score >= 70 else \
-                                 "MEDIUM" if competition_score >= 40 else "HIGH"
+                                 "MEDIUM" if competition_score >= 40 else "HIGH" # Based on 0-100 score
     coverage_rate_percent = round((current_insured / current_population) * 100, 1) if current_population > 0 else 0.0
+    
     recommendations = generate_recommendations(
         final_score, demand_score, competition_score, economic_score,
-        accessibility_score, risk_score, travel_time_minutes
+        accessibility_score_val, risk_score, travel_time_minutes # Pass calculated accessibility
     )
+    # Optionally add recommendation based on RMA performance
+    if rma_office_performance_score < 40:
+        recommendations.append("Nearby RMA office performance influence is low. This might indicate a challenging environment or opportunity for a high-performing new agency.")
+    elif rma_office_performance_score > 75:
+        recommendations.append("Strong positive influence from nearby RMA office performance suggests a favorable environment for similar success.")
 
-    # MODIFICATION IS HERE:
+
+    # --- Response ---
     return Response({
         "simulation_input": {"latitude": lat, "longitude": lon},
         "area_info": {
@@ -652,8 +776,8 @@ def simulate_score(request):
             "name": area_name_from_dict,
             "type": area_model_name,
         },
-        "score": final_score,  # ADDED: Top-level score for direct JS access
-        "overall_score": {     # Existing nested structure (good for other details)
+        "score": final_score,
+        "overall_score": {
             "value": final_score,
             "potential_category": potential_category,
         },
@@ -661,19 +785,22 @@ def simulate_score(request):
             "demand": round(demand_score, 1),
             "competition": round(competition_score, 1),
             "economic": round(economic_score, 1),
-            "accessibility": round(accessibility_score, 1),
+            "accessibility": round(accessibility_score_val, 1), # Use calculated
             "risk": round(risk_score, 1),
+            "rma_office_performance": round(rma_office_performance_score, 1), # Add new component
         },
         "key_metrics": {
+            # ... (existing key metrics) ...
             "population": current_population,
             "coverage_gap_persons": current_gap,
             "estimated_vehicles": current_vehicles,
             "current_coverage_rate_percent": coverage_rate_percent,
             "market_potential_untapped_percent": round(current_market_untapped, 1),
             "market_size_category": market_size_category,
-            "competition_level_category": competition_level_category,
+            "competition_level_category": competition_level_category, # Based on score
             "average_loss_ratio_in_area": round(current_loss_ratio, 3) if current_loss_ratio is not None else None,
             "travel_time_to_centroid_minutes": round(travel_time_minutes, 1) if travel_time_minutes is not None else None,
+            "raw_rma_office_influence": round(raw_rma_influence, 2), # For insight
         },
         "recommendations": recommendations
     })

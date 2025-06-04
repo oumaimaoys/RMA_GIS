@@ -29,7 +29,7 @@
       <!-- options are injected by JS once the GeoJSON is loaded -->
     </select>
   </div>
-  <div class="toggle-switch" style="margin-left: 38px;">
+  <div class="toggle-switch" style="margin-left: 38px;margin-top: 8px;">
     <span class="layer-label">Provinces</span>
     <label class="switch">
       <input type="checkbox" id="layer-toggle">
@@ -204,7 +204,27 @@
       }
     });
   });
-})();                                 // ✱ NEW
+})();                                
+    /* -------------------------------------------------------------------- */
+  /* 1.  CONFIG — tune these to your business meaning                     */
+  /* -------------------------------------------------------------------- */
+  const SCORE_THRESHOLDS = [          // lower bound of every band
+    0, 1, 5, 10, 20, 30, 50, 60, 70, 90
+  ];
+
+  const SCORE_COLORS = [
+    '#ffffff',  // pale-yellow
+    '#ffe082',  // maize
+    '#ffc04d',  // mango
+    '#ffa600',  // tangerine
+    '#ff7b00',  // pumpkin
+    '#ff4800',  // vermilion
+    '#e31a1c',  // true red
+    '#b70026',  // dark red
+    '#800026',  // burgundy
+    '#4d004b'   // deep purple-red
+  ];
+    /* -------------------------------------------------------------------- */
 
 
   const canvasRenderer = L.canvas({ padding: 0.5 });
@@ -234,6 +254,14 @@
     provinces : L.layerGroup().addTo(map),
     communes  : L.layerGroup().addTo(map)
   };
+
+  function getScoreColor(val){
+    if (val == null || isNaN(val)) return '#cccccc';   // missing data
+    for (let i = SCORE_THRESHOLDS.length - 1; i >= 0; i--){
+      if (val >= SCORE_THRESHOLDS[i]) return SCORE_COLORS[i];
+    }
+    return SCORE_COLORS[0];                            // safety
+  }
 
   function activeGroup(){
     return groups[currentLayerType];          // renvoie le groupe courant
@@ -281,14 +309,13 @@
     return counts;
   }
 
-  function getColorGradient(val, min, max) {
-    const ratio = (val - min) / (max - min + 0.00001);
-    if (isNaN(ratio) || max == min) return '#eee';
-    const r = Math.floor(255 * Math.min(2 * ratio, 1));
-    const g = Math.floor(255 * Math.min(2 * (1 - ratio), 1));
-    const b = Math.floor(255 * (1 - ratio));
-    return `rgb(${r},${g},${b})`;
-  }
+function getHeatColor(val){
+   if (val == null || isNaN(val)) return '#cccccc';
+   for (let i = SCORE_THRESHOLDS.length - 1; i >= 0; i--){
+     if (val >= SCORE_THRESHOLDS[i]) return SCORE_COLORS[i];
+   }
+   return SCORE_COLORS[0];
+ }
 
   // Style functions
   function provinceStyle(feature) {
@@ -301,7 +328,7 @@
     return {
       color: 'blue', weight: 2,
       fillOpacity: 0.75,
-      fillColor: getColorGradient(count, provinceRmaMin, provinceRmaMax)
+      fillColor: getHeatColor(count,  provinceRmaMin, provinceRmaMax)
     };
   }
   function communeStyle(feature) {
@@ -314,7 +341,7 @@
     return {
       color: 'green', weight: 1,
       fillOpacity: 0.7,
-      fillColor: getColorGradient(count, communeRmaMin, communeRmaMax)
+      fillColor: getHeatColor(count,  provinceRmaMin, provinceRmaMax)
     };
   }
 
@@ -647,58 +674,32 @@ function loadCommunes() {
     }
   });
 
-  function getScoreColor(val, min, max){
-    // Handle undefined/null values
-    if (val == null || isNaN(val)) {
-        return '#cccccc'; // Gray color for missing data
-    }
-    
-    // assurez-vous que chroma.min.js est déjà chargé avant ce code
-    return chroma.scale(['#fee5d9','#fcae91','#fb6a4a','#de2d26','#a50f15'])
-                .domain([min, max])(val)
-                .hex();
-}
-
+ 
 function buildScoreLayer(adminType, callback){
-    showLoading();
-    fetch(SCORE_URL[adminType])
-        .then(r=>{ if(!r.ok) throw Error(r.statusText); return r.json(); })
-        .then(fc=>{
-            // Filter out features with invalid scores - using score instead of score
-            const validScores = fc.features
-                .map(f => f.properties.score)
-                .filter(score => score != null && !isNaN(score) && score !== '');
-            
-            // Check if we have any valid scores
-            if (validScores.length === 0) {
-                throw new Error("Aucun score valide trouvé dans les données");
-            }
-            
-            const min = Math.min(...validScores);
-            const max = Math.max(...validScores);
+  showLoading();
+  fetch(SCORE_URL[adminType])
+    .then(r => { if(!r.ok) throw Error(r.statusText); return r.json(); })
+    .then(fc => {
+      const layer = L.geoJSON(fc, {
+        style: f => ({
+          weight: 1,
+          color: '#666',
+          fillOpacity: .8,
+          fillColor: getScoreColor(f.properties.score)
+        }),
+        onEachFeature: (f, l) => {
+          const s = f.properties.score;
+          l.bindPopup(
+            `<strong>${f.properties.name}</strong><br>Coverage Score : ` +
+            (s != null && !isNaN(s) ? s.toFixed(1) : 'N/A')
+          );
+        }
+      }).addTo(groups[adminType]);
 
-            const layer = L.geoJSON(fc, {
-                style: f => ({
-                    weight: 1,
-                    color: '#666',
-                    fillOpacity: .8,
-                    fillColor: getScoreColor(f.properties.score, min, max)
-                }),
-                onEachFeature: (f, l) => {
-                    const score = f.properties.score;
-                    const scoreText = (score != null && !isNaN(score)) 
-                        ? score.toFixed(1) 
-                        : 'N/A';
-                    
-                    l.bindPopup(`<strong>${f.properties.name}</strong><br>` +
-                               `Coverage Score : ${scoreText}`);
-                }
-            }).addTo(groups[adminType]);
-
-            callback(layer, min, max);
-        })
-        .catch(err => alert("Erreur score : " + err))
-        .finally(hideLoading);
+      callback(layer);          // we don't need min/max any more
+    })
+    .catch(err => alert("Erreur score : " + err))
+    .finally(hideLoading);
 }
 
 function showScoreLayer(){
@@ -710,17 +711,15 @@ function showScoreLayer(){
     // si déjà présent ⇒ juste l'ajouter
     if(scoreLayer[t]){
         map.addLayer(scoreLayer[t]);
-        addOrUpdateLegend(scoreLayer[t]._min, scoreLayer[t]._max);
+        addOrUpdateLegend();
         return;
     }
 
     // sinon : télécharger, construire et mémoriser
-    buildScoreLayer(t, (lyr,min,max)=>{
-        scoreLayer[t] = lyr;
-        scoreLayer[t]._min = min;
-        scoreLayer[t]._max = max;
-        map.addLayer(lyr);
-        addOrUpdateLegend(min,max);
+    buildScoreLayer(t, lyr => {
+      scoreLayer[t] = lyr;      // store reference
+      map.addLayer(lyr);        // display it
+      addOrUpdateLegend();      // draw discrete legend
     });
 }
 
@@ -735,22 +734,22 @@ function hideScoreLayer(type = currentLayerType){
     }
 }
 
-function addOrUpdateLegend(min,max){
-    if(scoreLegend) map.removeControl(scoreLegend);
+function addOrUpdateLegend(){
+  if (scoreLegend) map.removeControl(scoreLegend);
 
-    scoreLegend = L.control({position:'bottomright'});
-    scoreLegend.onAdd = ()=>{
-        const div = L.DomUtil.create('div','info legend');
-        const step = (max-min)/5;
-        for(let i=0;i<5;i++){
-            const v0=(min+i*step).toFixed(0), v1=(min+(i+1)*step).toFixed(0);
-            div.innerHTML +=
-                `<i style="background:${getScoreColor((+v0+ +v1)/2,min,max)}"></i> `
-                +`${v0}&ndash;${v1}<br>`;
-        }
-        return div;
-    };
-    scoreLegend.addTo(map);
+  scoreLegend = L.control({position:'bottomright'});
+  scoreLegend.onAdd = () => {
+    const div = L.DomUtil.create('div','info legend');
+    for (let i = SCORE_THRESHOLDS.length - 1; i >= 0; i--){
+      const from = SCORE_THRESHOLDS[i];
+      const to   = SCORE_THRESHOLDS[i+1];
+      div.innerHTML +=
+        `<i style="background:${SCORE_COLORS[i]}"></i> ` +
+        from + (to ? '&ndash;' + to : '+') + '<br>';
+    }
+    return div;
+  };
+  scoreLegend.addTo(map);
 }
 
 function clearEverything() {

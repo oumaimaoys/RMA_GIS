@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables, CA
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables, CA, RegionAdministrative
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -730,14 +730,34 @@ class LossRatioAdmin(admin.ModelAdmin):
 
 @admin.register(CoverageScore)
 class CoverageScoreAdmin(admin.ModelAdmin):
-    list_display = ('area', 'score', 'potential', "calculation_date")
+    list_display = (
+        "area",                   # FK – shows __str__ of Area
+        "score", "potential",
+        "demand_score", "competition_score",
+        "economic_score", "accessibility_score",
+        "risk_score",
+        "travel_time_to_centroid_minutes",
+        "calculation_date",
+    )
+
     list_filter = ('potential',)
     search_fields = ('area__name',)
 
 @admin.register(CoverageStats)
 class CoverageStatsAdmin(admin.ModelAdmin):
-    list_display = ('pop_mean', 'pop_std', 'gap_mean', 'gap_std',
-                    'veh_mean', 'veh_std')
+    list_display = (
+        "area_type", "calculation_date",
+        "pop_mean",  "pop_std",
+        "gap_mean",  "gap_std",
+        "veh_mean",  "veh_std",
+        "bank_intensity_mean",  "bank_intensity_std",
+        "comp_intensity_mean",  "comp_intensity_std",
+        "loss_ratio_mean",      "loss_ratio_std",
+        "market_potential_mean","market_potential_std",
+    )
+
+    # (optional quality-of-life tweaks)
+    list_filter   = ("area_type",)
     search_fields = ('calculation_date',)
 
     def get_readonly_fields(self, request, obj=None):
@@ -846,3 +866,22 @@ class CAAdmin(admin.ModelAdmin):
             self.process_excel_import(request)
             return HttpResponseRedirect(request.path)
         return super().changeform_view(request, object_id, form_url, extra_context)
+    
+@admin.register(RegionAdministrative)
+class RegionAdministrativeAdmin(admin.ModelAdmin):
+    list_display  = ('name', 'province_count', 'short_province_list')
+    search_fields = ('name', 'provinces__name')
+    ordering      = ('name',)
+
+    filter_horizontal  = ('provinces',)        # nice dual-select widget
+
+
+    @admin.display(description="Nbr. provinces")
+    def province_count(self, obj):
+        return obj.provinces.count()
+
+    @admin.display(description="Some provinces")
+    def short_province_list(self, obj):
+        names = [p.name for p in obj.provinces.all()[:5]]
+        tail  = " …" if obj.provinces.count() > 5 else ""
+        return ", ".join(names) + tail
