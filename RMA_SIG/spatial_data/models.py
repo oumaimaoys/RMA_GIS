@@ -88,8 +88,8 @@ class Area(models.Model):
     population = models.IntegerField(help_text="Total population in the area")
 
     # Calculated/Derived Data (can be updated via save() or periodic tasks)
-    insured_population = models.IntegerField(default=0, editable=False, help_text="Estimated insured population")
-    estimated_vehicles = models.IntegerField(default=0, editable=False, help_text="Estimated number of vehicles")
+    insured_population = models.IntegerField(default=0, editable=True, help_text="Estimated insured population")
+    estimated_vehicles = models.IntegerField(default=0, editable=True, help_text="Estimated number of vehicles")
     
     competition_count = models.IntegerField(default=0, editable=False, help_text="Number of competitor branches in the area")
     bank_count = models.IntegerField(default=0, editable=False, help_text="Number of bank branches in the area")
@@ -110,8 +110,8 @@ class Area(models.Model):
         Call this method explicitly when underlying data changes, or in save().
         """
         # Basic estimations (these formulas should be validated/improved)
-        self.estimated_vehicles = int(self.population * 0.1147) # This factor needs to be robust
-        self.insured_population = int(self.population * 0.17)  # This factor needs to be robust
+        self.estimated_vehicles = int(self.population * Variables.objects.get(name="vehicles_factor")) # This factor needs to be robust
+        self.insured_population = int(self.population * Variables.objects.get(name="insurable_population_ratio") ) # This factor needs to be robust
 
         if self.boundary:
             # Ensure boundary is in a planar projection for area calculation (e.g., a local UTM zone or Web Mercator)
@@ -276,4 +276,12 @@ class CoverageStats(models.Model):
     
     calculation_date = models.DateTimeField(default=timezone.now, help_text="When these stats were computed")
 
-  
+
+class Variables(models.Model):
+    """Stores variables used in the scoring process, such as weights and factors."""
+    name = models.CharField(max_length=100, unique=True)
+    value = models.FloatField(help_text="Value of the variable")
+    description = models.TextField(blank=True, null=True, help_text="Description of what this variable is used for")
+    
+    def __str__(self):
+        return f"{self.name}: {self.value}"

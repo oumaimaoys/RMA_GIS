@@ -21,6 +21,14 @@
       <button type="submit" aria-label="Rechercher"></button>
     </form>
   </div>
+  <div class="toggle-switch" style="margin-top:8px;">
+    <label class="layer-label" for="mandante-filter">Mandante</label>
+    <select id="mandante-filter"
+            style="padding:4px 6px; border-radius:4px; font-size:.9rem;">
+      <option value="ALL" selected>Tous</option>
+      <!-- options are injected by JS once the GeoJSON is loaded -->
+    </select>
+  </div>
   <div class="toggle-switch" style="margin-left: 38px;">
     <span class="layer-label">Provinces</span>
     <label class="switch">
@@ -200,6 +208,7 @@
 
 
   const canvasRenderer = L.canvas({ padding: 0.5 });
+  let mandanteFilter = new Set(); 
   let provincesLayer = null;
   let communesLayer = null;
   let agencyLayer = null;
@@ -368,7 +377,15 @@
     }
 
     const rmaFiltered = rmaData.features.filter(f => isInRegion(f.geometry.coordinates));
-    const compFiltered = !rmaOnlyActive ? compData.features.filter(f => isInRegion(f.geometry.coordinates)) : [];
+    const compFiltered = rmaOnlyActive ? [] : compData.features.filter(f => {
+        if (!isInRegion(f.geometry.coordinates)) return false;
+
+        if (mandanteFilter.size && !mandanteFilter.has('ALL')) {
+            const key = (f.properties.mandante || '').trim().toLowerCase();
+            return mandanteFilter.has(key);   // same canonical form
+        }
+        return true;
+    });
     const combined = [...rmaFiltered, ...compFiltered];
 
     if (agencyLayer) map.removeLayer(agencyLayer);
@@ -553,8 +570,51 @@ function loadCommunes() {
   ]).then(([comp, rma]) => {
     compData = comp;
     rmaData = rma;
+    /* ---------- build unique mandante list ------------ */
+    const mandantes = [...new Set(
+        compData.features
+                .map(f => (f.properties.mandante || '').trim())
+                .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity:'base' }));
+
+    /* ---------- build unique mandante list ------------ */
+    const seen = new Set();
+    const sel  = document.getElementById('mandante-filter');
+
+    compData.features.forEach(f => {
+      const raw = (f.properties.mandante || '').trim();
+      if (!raw) return;
+
+      const key = raw.toLowerCase();          // canonical form
+      if (seen.has(key)) return;              // skip duplicates
+      seen.add(key);
+
+      const opt = document.createElement('option');
+      opt.value = key;                        // 🚩 lower-case value
+      opt.textContent = raw;                  // nice label
+      sel.appendChild(opt);
+    });
+
+    /* ---------- listener : update the Set ------------- */
+    sel.addEventListener('change', e => {
+    const chosen = Array.from(e.target.selectedOptions).map(o => o.value);
+
+    // if “ALL” plus others ⇒ keep only the others
+    if (chosen.includes('ALL') && chosen.length > 1) {
+        sel.options[0].selected = false;
+        chosen.splice(chosen.indexOf('ALL'), 1);
+    }
+
+    mandanteFilter = new Set(chosen);       // now contains lower-case keys
+
+    // refresh markers if a region is selected
+    if (currentRegionLayer && currentRegionLayer.feature) {
+        loadAgenciesWithinRegion(currentRegionLayer.feature);
+    }
+  });
     loadCurrentLayer(); // call something to decide what to render
   });
+
   function loadCurrentLayer() {
     purgeGroup(currentLayerType);   // ⬅️  NEW : on efface d’abord la couche courante
 
@@ -763,6 +823,21 @@ rmaOnlyToggle.addEventListener('change', e => {
   if (currentRegionLayer && currentRegionLayer.feature) {
     loadAgenciesWithinRegion(currentRegionLayer.feature);
   }
+});
+
+const EXPANDED_SIZE = 8;               // rows to show when open
+
+// 1) Expand when the user clicks or tabs into the control
+sel.addEventListener('focus', () => sel.size = EXPANDED_SIZE);
+
+// 2) Collapse when they click somewhere else
+sel.addEventListener('blur',  () => sel.size = 1);
+
+// 3) Also collapse right after they make a choice with the mouse
+//    (helps on browsers that keep focus inside the select)
+sel.addEventListener('change', () => {
+  // give the browser a tick to process selection, then collapse
+  setTimeout(() => { sel.size = 1; }, 0);
 });
 
 </script>
