@@ -285,3 +285,12 @@ class Variables(models.Model):
     
     def __str__(self):
         return f"{self.name}: {self.value}"
+    
+class CA(models.Model):
+
+    agency = models.ForeignKey(RMAOffice, on_delete=models.CASCADE)
+    year = models.IntegerField()
+    CA_value = models.FloatField(default=0)
+
+    def __str__(self):
+        return f"CA {self.CA_value} for {self.agency.name} in {self.year}"

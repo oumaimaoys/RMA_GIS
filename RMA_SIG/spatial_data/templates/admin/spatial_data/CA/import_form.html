@@ -1,0 +1,70 @@
+{# templates/admin/add.html #}
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+  <p>
+    <a href="{% url 'admin:spatial_data_ca_add' %}?manual=1"
+       class="button default">
+      {% trans "Add a single entry manually" %}
+    </a>
+  </p>
+
+  {% if not object_id %}
+  <div style="margin-top:20px; border-top:1px solid #eee; padding-top:20px;">
+    <h2>{% trans "Import Excel File" %}</h2>
+
+    <form method="post" enctype="multipart/form-data" id="import-form">
+      {% csrf_token %}
+
+      {# ➊ year dropdown -------------------------------------------------- #}
+        <div style="margin-bottom:10px;">
+            <label for="id_year"><strong>Année&nbsp;:</strong></label>
+            <select name="year" id="id_year" required>
+                {% for y in years %}
+                <option value="{{ y }}">{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+      {# ➋ file ----------------------------------------------------------- #}
+      <div>
+        <label for="id_excel_file">{% trans "Choose an Excel file:" %}</label>
+        <input type="file" name="excel_file" id="id_excel_file"
+               accept=".xlsx,.xls" required>
+      </div>
+
+      <input type="submit" name="_import_file"
+             class="default" value="{% trans 'Import' %}"
+             style="margin-top:1em;">
+    </form>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('import-form');
+      const fileInput = document.getElementById('id_excel_file');
+      const importButton = document.getElementById('import-button');
+      const progress = document.getElementById('import-progress');
+      const status   = document.getElementById('import-status');
+
+      form.addEventListener('submit', function(e) {
+        if (e.submitter === importButton) {
+          if (!fileInput.files.length) {
+            e.preventDefault();
+            status.textContent = '{% trans "Please select an Excel file first." %}';
+            return;
+          }
+
+          // Show a simple, indeterminate progress bar
+          status.textContent = '{% trans "Processing file..." %}';
+          progress.style.display = 'block';
+          progress.removeAttribute('value');
+
+          // Let the server handle the actual import
+        }
+      });
+    });
+  </script>
+  {% endif %}
+{% endblock %}

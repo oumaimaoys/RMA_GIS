@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables, CA
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -16,6 +16,7 @@ import json
 from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Point
 from django.forms import ModelForm
 from .forms import LatLonPointMixin
+from decimal import Decimal
 
 class CsvImportForm(forms.Form):
     csv_file = forms.FileField()
@@ -747,3 +748,101 @@ class VariablesAdmin(admin.ModelAdmin):
     list_display = ('name', 'value', 'description')
     search_fields = ('name',)
 
+
+@admin.register(CA)
+class CAAdmin(admin.ModelAdmin):
+    list_display      = ('agency', 'year', 'CA_value')
+    search_fields     = ('agency__name', 'agency__code_RMA', 'year')
+    add_form_template = 'admin/spatial_data/CA/import_form.html'
+
+    # ─────────────────────────────────────────────────────────────
+    # 1) Inject <years> list into the custom “add” template
+    # ─────────────────────────────────────────────────────────────
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        – Default: show the custom Excel-import wizard, with
+                a <select> populated by `years`.
+        – ?manual=1: temporarily disable the wizard template so the
+                    stock Django “Add CA” form appears instead.
+        """
+
+        # 1️⃣  provide the <years> list to the template
+        extra_context = extra_context or {}
+        extra_context["years"] = list(range(2020, 2031))   # 2020 … 2030
+
+        # 2️⃣  honour the manual-entry toggle
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None                  # use default template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original          # restore for next time
+
+        # 3️⃣  regular wizard
+        return super().add_view(request, form_url, extra_context)
+
+
+    # ─────────────────────────────────────────────────────────────
+    # 2) Excel importer
+    # ─────────────────────────────────────────────────────────────
+    def process_excel_import(self, request):
+        year = request.POST.get('year')
+        f    = request.FILES.get('excel_file')
+
+        if not year or not f:
+            messages.error(request, "Sélectionnez une année et un fichier.")
+            return False
+
+        try:
+            df = pd.read_excel(f, dtype=str)
+            df.columns = (df.columns.str.strip()
+                                    .str.replace('\xa0', ' ', regex=False)
+                                    .str.replace('\u200b', '', regex=False))
+
+            required = {"CODEAGENT", year}
+            if missing := required - set(df.columns):
+                messages.error(request, f"Colonnes manquantes : {', '.join(missing)}")
+                return False
+
+            imported = skipped = 0
+            for idx, row in df.iterrows():
+                code = (row["CODEAGENT"] or "").strip()
+                raw  = (row[year]        or "").strip().replace(' ', '').replace(',', '')
+                if not code or not raw:
+                    skipped += 1
+                    continue
+
+                try:
+                    office = RMAOffice.objects.get(code_RMA__iexact=code)
+                except RMAOffice.DoesNotExist:
+                    messages.warning(request, f"Ligne {idx+2}: CODEAGENT {code} inconnu.")
+                    skipped += 1
+                    continue
+
+                CA.objects.update_or_create(
+                    agency=office,
+                    year=int(year),
+                    defaults={"CA_value": Decimal(raw)}
+                )
+                imported += 1
+
+            if imported:
+                messages.success(request, f"{imported} lignes importées.")
+            if skipped:
+                messages.warning(request, f"{skipped} lignes ignorées.")
+            return bool(imported)
+
+        except Exception as exc:
+            messages.error(request, f"Erreur d'import : {exc}")
+            return False
+
+    # ─────────────────────────────────────────────────────────────
+    # 3) Hook “Import” button on the add page
+    # ─────────────────────────────────────────────────────────────
+    def changeform_view(self, request, object_id=None,
+                        form_url='', extra_context=None):
+        if request.method == 'POST' and '_import_file' in request.POST:
+            self.process_excel_import(request)
+            return HttpResponseRedirect(request.path)
+        return super().changeform_view(request, object_id, form_url, extra_context)
