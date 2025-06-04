@@ -3,6 +3,12 @@
 {% load i18n admin_urls %}
 
 {% block content %}
+  <p>
+      <a href="{% url 'admin:spatial_data_lossratio_add' %}?manual=1"
+          class="button default">
+          {% trans "Add a single entry manually" %}
+      </a>
+  </p>
   {% if not object_id %}
   <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
     <h2>{% trans "Import Excel File" %}</h2>

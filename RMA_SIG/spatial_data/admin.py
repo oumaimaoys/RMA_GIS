@@ -14,6 +14,8 @@ from django.utils.html import format_html
 from datetime import datetime
 import json
 from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Point
+from django.forms import ModelForm
+from .forms import LatLonPointMixin
 
 class CsvImportForm(forms.Form):
     csv_file = forms.FileField()
@@ -22,22 +24,65 @@ class CsvImportForm(forms.Form):
 class BaseModelAdmin(OSMGeoAdmin):
     pass
 
+class LatLonPointAdminMixin:
+    """
+    Mixin for ModelAdmin / InlineModelAdmin that replaces the
+    default map widget with the Lat/Lon form created on the fly.
+    """
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        1. Dynamically create a new class that inherits from
+           LatLonPointMixin AND ModelForm.
+        2. Fill in Meta.model with self.model so it’s concrete.
+        3. Return that class to Django.
+        """
+        attrs = {
+            "Meta": type(
+                "Meta",
+                (LatLonPointMixin.Meta,),
+                {"model": self.model},      # plug in the real model
+            )
+        }
+        DynamicForm = type(
+            f"{self.model.__name__}LatLonForm",
+            (LatLonPointMixin, ModelForm),
+            attrs,
+        )
+        kwargs["form"] = DynamicForm
+        return super().get_form(request, obj, **kwargs)
+
 
 
 @admin.register(RMABGD)
-class RMABGDAdmin(BaseModelAdmin):
+class RMABGDAdmin(LatLonPointAdminMixin, BaseModelAdmin):
     list_display = ('name', 'code_RMA', 'code_ACAPS', 'address', 'city','location', 'type_BGD', 'Partenaire', 'formatted_date_creation', 'RMA_BGD_state')
     list_filter = ('type_BGD', 'RMA_BGD_state', 'city')
     search_fields = ('name', 'code_RMA', 'Partenaire')
     form = RMABGDForm  
 
-    add_form_template = 'admin/spatial_data/RMABGD/change_form.html'
-    change_form_template = add_form_template
+    add_form_template = 'admin/spatial_data/RMABGD/import_form.html'
+    
     
     # Set date format for normal Django admin forms
     formfield_overrides = {
         models.DateField: {'widget': forms.DateInput(format='%d-%m-%Y', attrs={'placeholder': 'dd-mm-yyyy'})},
     }
+
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        • Default:     show the Excel-import wizard (self.add_form_template).
+        • ?manual=1:   temporarily disable add_form_template so Django falls
+                       back to the standard add-object form.
+        """
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None            # use the stock template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original    # restore for next time
+        return super().add_view(request, form_url, extra_context)
     
     # Custom method to format date in d-m-yyyy format for admin list display
     def formatted_date_creation(self, obj):
@@ -132,13 +177,27 @@ class RMABGDAdmin(BaseModelAdmin):
 
 
 @admin.register(RMAAgent)
-class RMAAgentAdmin(BaseModelAdmin):
+class RMAAgentAdmin(LatLonPointAdminMixin, BaseModelAdmin):
     list_display = ('name', 'code_RMA', 'code_ACAPS', 'address', 'city','location')
     list_filter = ('city',)
     search_fields = ('name', 'code_RMA', 'address', 'city')
 
-    add_form_template = 'admin/spatial_data/RMAAgent/change_form.html'
-    change_form_template = add_form_template
+    add_form_template = 'admin/spatial_data/RMAAgent/import_form.html'
+
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        • Default:     show the Excel-import wizard (self.add_form_template).
+        • ?manual=1:   temporarily disable add_form_template so Django falls
+                       back to the standard add-object form.
+        """
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None            # use the stock template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original    # restore for next time
+        return super().add_view(request, form_url, extra_context)
     
 
     def process_excel_import(self, request):
@@ -191,13 +250,26 @@ class RMAAgentAdmin(BaseModelAdmin):
 
 
 @admin.register(Bank)
-class BankAdmin(BaseModelAdmin):
+class BankAdmin(LatLonPointAdminMixin, BaseModelAdmin):
     list_display = ('institution_name',)
     search_fields = ('institution_name',)
 
-    add_form_template = "admin/spatial_data/Bank/change_form.html"
-    change_form_template = add_form_template
+    add_form_template = "admin/spatial_data/Bank/import_form.html"
     
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        • Default:     show the Excel-import wizard (self.add_form_template).
+        • ?manual=1:   temporarily disable add_form_template so Django falls
+                       back to the standard add-object form.
+        """
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None            # use the stock template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original    # restore for next time
+        return super().add_view(request, form_url, extra_context)
 
     def process_excel_import(self, request):
         f = request.FILES.get('excel_file')
@@ -244,14 +316,27 @@ class BankAdmin(BaseModelAdmin):
 
 
 @admin.register(Competitor)
-class CompetitorAdmin(BaseModelAdmin):
+class CompetitorAdmin(LatLonPointAdminMixin, BaseModelAdmin):
     list_display = ('agency_name', 'code_ACAPS', 'competitor_type', 'mandante', 'city')
     list_filter = ('competitor_type', 'mandante')
     search_fields = ('company_name', 'code_ACAPS', 'mandante', 'city',)
 
-    add_form_template = "admin/spatial_data/Competitor/change_form.html"
-    change_form_template = add_form_template
+    add_form_template = "admin/spatial_data/Competitor/import_form.html"
     
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        • Default:     show the Excel-import wizard (self.add_form_template).
+        • ?manual=1:   temporarily disable add_form_template so Django falls
+                       back to the standard add-object form.
+        """
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None            # use the stock template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original    # restore for next time
+        return super().add_view(request, form_url, extra_context)
 
     def process_excel_import(self, request):
         f = request.FILES.get('excel_file')
@@ -307,8 +392,8 @@ class CommuneAdmin(admin.ModelAdmin):
     list_display = ('name', 'population',  'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
     search_fields = ('name',)
 
-    add_form_template = "admin/spatial_data/Commune/change_form.html"
-    change_form_template = add_form_template
+    add_form_template = "admin/spatial_data/Commune/import_form.html"
+
 
     def process_geojson_import(self, request):
         f = request.FILES.get('geojson_file')
@@ -433,8 +518,7 @@ class ProvinceAdmin(admin.ModelAdmin):
     list_display = ('name', 'population', 'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
     search_fields = ('name',)
 
-    add_form_template = "admin/spatial_data/Province/change_form.html"
-    change_form_template = add_form_template
+    add_form_template = "admin/spatial_data/Province/import_form.html"
 
     def process_geojson_import(self, request):
         f = request.FILES.get('geojson_file')
@@ -511,7 +595,22 @@ class ProvinceAdmin(admin.ModelAdmin):
 class LossRatioAdmin(admin.ModelAdmin):
     list_display = ('province', 'commune', 'RMA_office', 'loss_ratio')
     search_fields = ('province', 'commune', 'RMA_office',)
-    add_form_template = change_form_template = "admin/spatial_data/LossRatio/change_form.html"
+    add_form_template = "admin/spatial_data/LossRatio/import_form.html"
+    
+    def add_view(self, request, form_url='', extra_context=None):
+        """
+        • Default:     show the Excel-import wizard (self.add_form_template).
+        • ?manual=1:   temporarily disable add_form_template so Django falls
+                       back to the standard add-object form.
+        """
+        if request.GET.get("manual"):
+            original = self.add_form_template
+            self.add_form_template = None            # use the stock template
+            try:
+                return super().add_view(request, form_url, extra_context)
+            finally:
+                self.add_form_template = original    # restore for next time
+        return super().add_view(request, form_url, extra_context)
 
     def process_excel_import(self, request):
         f = request.FILES.get('excel_file')

@@ -3,8 +3,14 @@
 {% load i18n admin_urls %}
 
 {% block content %}
+  <p>
+    <a href="{% url 'admin:spatial_data_bank_add' %}?manual=1"
+       class="button default">
+      {% trans "Add a single entry manually" %}
+    </a>
+  </p>
   {% if not object_id %}
-  <div style="margin-top: 20px; border-top: 1px solid #eee; padding: 20px;">
+  <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
     <h2>{% trans "Import Excel File" %}</h2>
     <form method="post" enctype="multipart/form-data" id="import-form">
       {% csrf_token %}
@@ -20,11 +26,7 @@
         <div class="help-text" style="margin-top: .5em;">
           <p><strong>{% trans "Required fields in the imported file:" %}</strong></p>
           <ul>
-            <li>code_acaps</li>
-            <li>nom</li>
-            <li>qualité</li>
-            <li>mandante</li>
-            <li>localité</li>
+            <li>bank</li>
             <li>longitude</li>
             <li>latitude</li>
           </ul>
@@ -40,31 +42,34 @@
       </div>
 
       <div style="margin-top: 10px;">
-        <progress id="import-progress" style="width:100%; display:none;"></progress>
-        <p id="import-status" style="margin-top:5px;"></p>
+        <progress id="import-progress" max="100" style="width: 100%; display: none;"></progress>
+        <p id="import-status" style="margin-top: 5px;"></p>
       </div>
     </form>
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', function() {
       const form = document.getElementById('import-form');
       const fileInput = document.getElementById('id_excel_file');
       const importButton = document.getElementById('import-button');
       const progress = document.getElementById('import-progress');
-      const status = document.getElementById('import-status');
+      const status   = document.getElementById('import-status');
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', function(e) {
         if (e.submitter === importButton) {
           if (!fileInput.files.length) {
             e.preventDefault();
             status.textContent = '{% trans "Please select an Excel file first." %}';
             return;
           }
+
+          // Show a simple, indeterminate progress bar
           status.textContent = '{% trans "Processing file..." %}';
           progress.style.display = 'block';
           progress.removeAttribute('value');
-          // Server will handle the import; this gives visual feedback only.
+
+          // Let the server handle the actual import
         }
       });
     });

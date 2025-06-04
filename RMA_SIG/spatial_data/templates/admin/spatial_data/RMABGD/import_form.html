@@ -1,10 +1,16 @@
-{# templates/admin/add.html #}
-{% extends "admin/change_form.html" %}
+{% extends "admin/base_site.html" %}
 {% load i18n admin_urls %}
 
 {% block content %}
+  {# ——— NEW BUTTON ——— #}
+  <p>
+    <a href="{% url 'admin:spatial_data_rmabgd_add' %}?manual=1"
+       class="button default">
+      {% trans "Add a single entry manually" %}
+    </a>
+  </p>
   {% if not object_id %}
-  <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
+  <div style="margin-top: 20px; border-top: 1px solid #eee; padding: 20px;">
     <h2>{% trans "Import Excel File" %}</h2>
     <form method="post" enctype="multipart/form-data" id="import-form">
       {% csrf_token %}
@@ -20,19 +26,25 @@
         <div class="help-text" style="margin-top: .5em;">
           <p><strong>{% trans "Required fields in the imported file:" %}</strong></p>
           <ul>
+            <li>Code RMA</li>
             <li>Code ACAPS</li>
-            <li>Code RMA-Agent</li>
-            <li>Agence</li>
-            <li>ville</li>
-            <li>Adresse de l'agence</li>
+            <li>Dénomination RMA</li>
+            <li>Ville</li>
+            <li>Adresse</li>
             <li>Longitude</li>
             <li>Latitude</li>
+            <li>Type BGD</li>
+            <li>Partenaire</li>
+            <li>{% trans "Date création" %} ({% trans "format" %} d-m-yyyy, e.g. 15-4-2025)</li>
+            <li>Etat BGD RMA</li>
           </ul>
+          <p><strong>{% trans "Date format note:" %}</strong></p>
+          <p>{% trans "Dates should be d-m-yyyy (day-month-year), e.g. 1-4-2025 or 15-12-2024. Slashes (d/m/yyyy) are also accepted." %}</p>
         </div>
         <input
           type="submit"
           name="_import_file"
-          value="{% trans 'Import' %}"
+          value="{% trans 'Import Excel' %}"
           id="import-button"
           class="default"
           style="margin-top: 1em;"
@@ -40,34 +52,31 @@
       </div>
 
       <div style="margin-top: 10px;">
-        <progress id="import-progress" style="width: 100%; display: none;"></progress>
-        <p id="import-status" style="margin-top: 5px;"></p>
+        <progress id="import-progress" style="width:100%; display:none;"></progress>
+        <p id="import-status" style="margin-top:5px;"></p>
       </div>
     </form>
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', () => {
       const form = document.getElementById('import-form');
       const fileInput = document.getElementById('id_excel_file');
       const importButton = document.getElementById('import-button');
       const progress = document.getElementById('import-progress');
-      const status   = document.getElementById('import-status');
+      const status = document.getElementById('import-status');
 
-      form.addEventListener('submit', function(e) {
+      form.addEventListener('submit', (e) => {
         if (e.submitter === importButton) {
           if (!fileInput.files.length) {
             e.preventDefault();
             status.textContent = '{% trans "Please select an Excel file first." %}';
             return;
           }
-
-          // Show a simple indeterminate progress bar
           status.textContent = '{% trans "Processing file..." %}';
           progress.style.display = 'block';
           progress.removeAttribute('value');
-
-          // Let the server handle the actual import
+          // Server will handle the import; this gives visual feedback only.
         }
       });
     });
