@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block content %}
+<div class="container py-4" style="margin-top: 50px;">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">
+      <i class="bi bi-bell me-2 text-primary"></i>
+      {% translate "Notifications" %}
+    </h2>
+    
+    {% if notifications %}
+      <div class="d-flex gap-2 align-items-center">
+        <span class="badge bg-primary rounded-pill">
+          {{ notifications|length }} {% translate "total" %}
+        </span>
+        {% if unread_count > 0 %}
+          <span class="badge bg-warning rounded-pill">
+            {{ unread_count }} {% translate "unread" %}
+          </span>
+          <form method="post" action="{% url 'frontend:mark_all_read' %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-check-all me-1"></i>
+              {% translate "Mark all as read" %}
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if notifications %}
+    <!-- Notification Actions Bar -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body py-2 px-3 bg-light">
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-3">
+            <small class="text-muted mb-0">
+              <i class="bi bi-info-circle me-1"></i>
+              {% blocktranslate count counter=notifications|length %}
+                {{ counter }} notification
+              {% plural %}
+                {{ counter }} notifications
+              {% endblocktranslate %}
+            </small>
+            {% if unread_count > 0 %}
+              <small class="text-warning mb-0">
+                <i class="bi bi-exclamation-circle me-1"></i>
+                {% blocktranslate count counter=unread_count %}
+                  {{ counter }} unread
+                {% plural %}
+                  {{ counter }} unread
+                {% endblocktranslate %}
+              </small>
+            {% endif %}
+          </div>
+          
+          <div class="btn-group btn-group-sm" role="group">
+            <input type="radio" class="btn-check" name="filter" id="all" autocomplete="off" checked>
+            <label class="btn btn-outline-secondary" for="all">
+              <i class="bi bi-list me-1"></i>{% translate "All" %}
+            </label>
+            
+            <input type="radio" class="btn-check" name="filter" id="unread" autocomplete="off">
+            <label class="btn btn-outline-warning" for="unread">
+              <i class="bi bi-envelope me-1"></i>{% translate "Unread" %}
+            </label>
+            
+            <input type="radio" class="btn-check" name="filter" id="read" autocomplete="off">
+            <label class="btn btn-outline-success" for="read">
+              <i class="bi bi-envelope-open me-1"></i>{% translate "Read" %}
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications List -->
+    <div class="list-group shadow-sm rounded-3 border-0 overflow-hidden">
+      {% for n in notifications %}
+        <a href="{% url 'frontend:read_and_redirect' n.pk %}" 
+           class="list-group-item list-group-item-action py-3 border-0 notification-item {% if not n.read %}unread-notification{% else %}read-notification{% endif %}" 
+           data-read="{{ n.read|yesno:'true,false' }}"
+           aria-current="{% if not n.read %}true{% else %}false{% endif %}">
+          <div class="d-flex w-100 align-items-start">
+            <!-- Status Icon -->
+            <div class="me-3 flex-shrink-0" style="margin-top: 2px;">
+              {% if not n.read %}
+                <div class="notification-status-indicator unread">
+                  <i class="bi bi-circle-fill text-primary fs-6"></i>
+                </div>
+              {% else %}
+                <div class="notification-status-indicator read">
+                  <i class="bi bi-check-circle-fill text-success fs-6"></i>
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Notification Content -->
+            <div class="flex-grow-1 min-w-0">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <h6 class="mb-1 {% if not n.read %}fw-semibold text-dark{% else %}text-muted{% endif %}">
+                  {{ n.description|truncatechars:80 }}
+                </h6>
+                <div class="text-end flex-shrink-0 ms-2">
+                  <small class="text-muted d-block">{{ n.created_at|timesince }} {% translate "ago" %}</small>
+                  {% if not n.read %}
+                    <span class="badge bg-primary rounded-pill mt-1" style="font-size: 0.6rem;">
+                      {% translate "New" %}
+                    </span>
+                  {% endif %}
+                </div>
+              </div>
+              
+              {% if n.verb_details %}
+                <small class="d-block text-muted mb-2" style="line-height: 1.4;">
+                  {{ n.verb_details|truncatechars:120 }}
+                </small>
+              {% endif %}
+              
+              <!-- Notification Meta -->
+              <div class="d-flex align-items-center gap-3 mt-2">
+                <small class="text-muted">
+                  <i class="bi bi-clock me-1"></i>
+                  {{ n.created_at|date:"M d, Y \a\t g:i A" }}
+                </small>
+                {% if n.action_object %}
+                  <small class="text-muted">
+                    <i class="bi bi-tag me-1"></i>
+                    {{ n.action_object|truncatechars:30 }}
+                  </small>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Action Indicator -->
+            <div class="ms-2 flex-shrink-0 d-flex align-items-center">
+              <i class="bi bi-chevron-right text-muted"></i>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+      <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+          {% if page_obj.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                <i class="bi bi-chevron-left me-1"></i>{% translate "Previous" %}
+              </a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link">
+                <i class="bi bi-chevron-left me-1"></i>{% translate "Previous" %}
+              </span>
+            </li>
+          {% endif %}
+
+          {% for i in paginator.page_range %}
+            {% if page_obj.number == i %}
+              <li class="page-item active" aria-current="page">
+                <span class="page-link">{{ i }}</span>
+              </li>
+            {% else %}
+              <li class="page-item">
+                <a class="page-link" href="?page={{ i }}">{{ i }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page_obj.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                {% translate "Next" %}<i class="bi bi-chevron-right ms-1"></i>
+              </a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link">
+                {% translate "Next" %}<i class="bi bi-chevron-right ms-1"></i>
+              </span>
+            </li>
+          {% endif %}
+        </ul>
+      </nav>
+    {% endif %}
+
+  {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-5">
+      <div class="mb-4">
+        <i class="bi bi-bell-slash display-1 text-muted"></i>
+      </div>
+      <h4 class="text-muted mb-3">{% translate "No notifications yet" %}</h4>
+      <p class="text-muted mb-4">
+        {% translate "You'll see notifications here when there's something new to tell you about." %}
+      </p>
+      <a href="{% url 'home' %}" class="btn btn-primary">
+        <i class="bi bi-house me-1"></i>{% translate "Go to Home" %}
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+<style>
+/* Notification List Enhancements */
+.notification-item {
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.notification-item:hover {
+  background-color: #f8f9fa !important;
+  transform: translateX(2px);
+}
+
+.unread-notification {
+  background: linear-gradient(90deg, #e8f4fd 0%, #ffffff 100%);
+  border-left-color: #0d6efd !important;
+}
+
+.unread-notification:hover {
+  background: linear-gradient(90deg, #d1ecf1 0%, #f8f9fa 100%) !important;
+}
+
+.read-notification {
+  background-color: #ffffff;
+}
+
+.read-notification:hover {
+  background-color: #f8f9fa !important;
+}
+
+.notification-status-indicator {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.notification-status-indicator.unread {
+  background: rgba(13, 110, 253, 0.1);
+}
+
+.notification-status-indicator.read {
+  background: rgba(25, 135, 84, 0.1);
+}
+
+/* Filter Animation */
+.btn-check:checked + .btn {
+  transform: scale(0.95);
+}
+
+/* Card Enhancements */
+.card {
+  transition: all 0.2s ease;
+}
+
+.list-group {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Badge Animations */
+.badge {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .d-flex.justify-content-between.align-items-center {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+  
+  .btn-group {
+    width: 100%;
+  }
+  
+  .btn-group .btn {
+    flex: 1;
+  }
+  
+  .notification-item .d-flex {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .notification-item .text-end {
+    text-align: left !important;
+  }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Filter functionality
+  const filterButtons = document.querySelectorAll('input[name="filter"]');
+  const notifications = document.querySelectorAll('.notification-item');
+  
+  filterButtons.forEach(button => {
+    button.addEventListener('change', function() {
+      const filter = this.id;
+      
+      notifications.forEach(notification => {
+        const isRead = notification.dataset.read === 'true';
+        let show = false;
+        
+        switch(filter) {
+          case 'all':
+            show = true;
+            break;
+          case 'unread':
+            show = !isRead;
+            break;
+          case 'read':
+            show = isRead;
+            break;
+        }
+        
+        if (show) {
+          notification.style.display = 'block';
+          notification.style.animation = 'fadeIn 0.3s ease';
+        } else {
+          notification.style.display = 'none';
+        }
+      });
+    });
+  });
+  
+  // Smooth scroll to top after marking all as read
+  const markAllForm = document.querySelector('form[action*="mark_all_read"]');
+  if (markAllForm) {
+    markAllForm.addEventListener('submit', function() {
+      // Add loading state
+      const button = this.querySelector('button');
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Processing...';
+      button.disabled = true;
+      
+      // The form will submit and redirect, so this is just for user feedback
+    });
+  }
+});
+</script>
+{% endblock %}

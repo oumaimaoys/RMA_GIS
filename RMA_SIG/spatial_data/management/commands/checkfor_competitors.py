@@ -5,37 +5,36 @@ from typing import Optional, Dict, Any, List
 
 import overpy
 from django.conf import settings
-from django.contrib.gis.db.models.functions import Distance
+from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import Point
-from django.contrib.gis.measure import D
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from frontend.models import Notification
 from spatial_data.models import (
     RMAOffice,
     OSMDiscoveredCompetitor,
     AgencyOSMCompetitorProximity,
 )
 
-# ------------------------------------------------------------------ #
-#  CONFIG                                                            #
-# ------------------------------------------------------------------ #
-DEFAULT_RADIUS = getattr(settings, "DEFAULT_SEARCH_RADIUS_KM", 5)
-OVERPASS_DELAY = 1.2           # seconds between requests (OSM-friendly)
-OVERPASS_TIMEOUT = 60          # per request, seconds
-
-EMAIL_TO = getattr(settings, "ALERT_EMAIL_RECIPIENTS", [])
-EMAIL_FROM = getattr(settings, "DEFAULT_FROM_EMAIL", None)
+# ────────────────────────────────────────────────────────────────────
+#  CONFIG
+# ────────────────────────────────────────────────────────────────────
+DEFAULT_RADIUS       = getattr(settings, "DEFAULT_SEARCH_RADIUS_KM", 5)
+OVERPASS_DELAY       = 1.2         # polite pause between requests (s)
+OVERPASS_TIMEOUT     = 60          # not used (overpy default = 180 s)
+EMAIL_TO             = getattr(settings, "ALERT_EMAIL_RECIPIENTS", [])
+EMAIL_FROM           = getattr(settings, "DEFAULT_FROM_EMAIL", None)
 
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------------------------ #
-#  HELPERS                                                           #
-# ------------------------------------------------------------------ #
+# ────────────────────────────────────────────────────────────────────
+#  HELPER FUNCTIONS
+# ────────────────────────────────────────────────────────────────────
 def overpass_query(lat: float, lon: float, radius_m: int) -> str:
-    """Return an Overpass QL query for insurance offices/shops."""
+    """Return an Overpass-QL query for insurance offices/shops."""
     return f"""
     (
       node["office"="insurance"](around:{radius_m},{lat},{lon});
@@ -47,102 +46,126 @@ def overpass_query(lat: float, lon: float, radius_m: int) -> str:
 
 
 def send_summary_mail(entries: List[Dict[str, Any]]) -> None:
-    """E-mail the list of new proximities (HTML + plain)."""
+    """Plain + HTML e-mail listing the new proximities."""
     if not entries or not EMAIL_TO or not EMAIL_FROM:
         return
 
     subject = "[RMA-SIG] New OSM competitor agencies near RMA offices"
 
-    plain_lines = ["New competitor agencies detected:\n"]
-    html_lines = ["<html><body><h2>New OSM competitor agencies</h2><ul>"]
+    plain = ["New competitor agencies detected:\n"]
+    html  = ["<html><body><h2>New OSM competitor agencies</h2><ul>"]
 
     for e in entries:
-        plain_lines.append(
+        line = (
             f"- {e['competitor_name']} ({e['osm_key']}, {e['dist_km']:.2f} km) "
             f"near {e['office_name']} [{e['office_city']}]"
         )
-        html_lines.append(
+        plain.append(line)
+        html.append(
             f"<li><strong>{e['competitor_name']}</strong> "
             f"({e['osm_key']}, {e['dist_km']:.2f}&nbsp;km)<br>"
             f"near <em>{e['office_name']}</em> – {e['office_city']}</li>"
         )
 
-    html_lines.append("</ul></body></html>")
+    html.append("</ul></body></html>")
 
     send_mail(
         subject,
-        "\n".join(plain_lines),
+        "\n".join(plain),
         EMAIL_FROM,
         EMAIL_TO,
-        html_message="".join(html_lines),
+        html_message="".join(html),
         fail_silently=False,
     )
 
 
-# ------------------------------------------------------------------ #
-#  COMMAND                                                           #
-# ------------------------------------------------------------------ #
-class Command(BaseCommand):
-    """Fast competitor checker (Overpass + bulk operations)."""
+def notify_staff_competitor(comp_name: str, rma_office: RMAOffice) -> None:
+    """
+    Creates ONE Notification per staff user for this competitor–office pair.
+    """
+    staff_qs = get_user_model().objects.filter(is_staff=True, is_active=True)
+    if not staff_qs.exists():
+        return
 
-    help = "Detect new insurance agencies in OSM near each RMA office."
+    notif_objs = [
+        Notification(
+            recipient=u,
+            verb="New competitor nearby",
+            description=f"{comp_name} detected near {rma_office.name}",
+            url="/admin/spatial_data/osmdiscoveredcompetitor/",   # jump to admin list
+        )
+        for u in staff_qs
+    ]
+    Notification.objects.bulk_create(notif_objs, ignore_conflicts=True)
+
+
+# ────────────────────────────────────────────────────────────────────
+#  MANAGEMENT COMMAND
+# ────────────────────────────────────────────────────────────────────
+class Command(BaseCommand):
+    """Detect new insurance agencies in OSM near each RMA office."""
+
+    help = "Scrapes Overpass-API and stores competitor + proximity rows."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--radius_km",
             type=float,
             default=DEFAULT_RADIUS,
-            help="Search radius in kilometres.",
+            help="Search radius around each office (km).",
         )
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="Run without writing to the DB or sending e-mails.",
+            help="Run without writing to DB or sending e-mails/notifications.",
         )
 
-    # -------------------- MAIN ------------------------------------ #
+    # ────────────────────────────────────────────────────────────────
+    #  MAIN
+    # ────────────────────────────────────────────────────────────────
     def handle(self, *args, **opts):
         radius_km: float = opts["radius_km"]
-        dry_run: bool = opts["dry_run"]
+        dry_run:   bool  = opts["dry_run"]
 
         api = overpy.Overpass(max_retry_count=3)
 
         offices = (
-            RMAOffice.objects.exclude(location__isnull=True)
+            RMAOffice.objects
+            .exclude(location__isnull=True)
             .exclude(location__isempty=True)
         )
         self.stdout.write(
-            f"🔍 Scanning {offices.count()} offices – radius {radius_km} km "
-            f"(dry-run={dry_run})"
+            f"🔍 Scanning {offices.count()} offices – "
+            f"radius {radius_km} km (dry-run = {dry_run})"
         )
 
-        # Existing OSM ids to skip duplicates fast
+        # cache of OSM ids already known globally
         known_ids = set(
             OSMDiscoveredCompetitor.objects.values_list("osm_id", flat=True)
         )
 
-        new_competitors: List[OSMDiscoveredCompetitor] = []
-        summary_rows: List[Dict[str, Any]] = []
-        new_proximities: List[AgencyOSMCompetitorProximity] = []
+        new_competitors:  List[OSMDiscoveredCompetitor]           = []
+        new_proximities:  List[AgencyOSMCompetitorProximity]      = []
+        summary_rows:     List[Dict[str, Any]]                    = []
 
-        # ---------------- LOOP OVER OFFICES ----------------------- #
+        # ───────────── iterate over offices ─────────────
         for idx, office in enumerate(offices, 1):
             lat, lon = office.location.y, office.location.x
             radius_m = int(radius_km * 1000)
 
             try:
-                ov_result = api.query(overpass_query(lat, lon, radius_m))
+                result = api.query(overpass_query(lat, lon, radius_m))
             except overpy.exception.OverpassTooManyRequests:
                 time.sleep(30)
-                ov_result = api.query(overpass_query(lat, lon, radius_m))
-            except Exception as e:
-                logger.error("Overpass error for %s: %s", office.name, e)
+                result = api.query(overpass_query(lat, lon, radius_m))
+            except Exception as exc:
+                logger.error("Overpass error for %s: %s", office.name, exc)
                 continue
 
-            time.sleep(OVERPASS_DELAY)  # politeness pause
+            time.sleep(OVERPASS_DELAY)      # be nice to OSM
 
-            # Helper to process node/way rows uniformly
-            def process_osm(
+            # inner helper to treat nodes & ways alike
+            def handle_osm(
                 osm_id: int,
                 osm_type: str,
                 lat_raw: Optional[str],
@@ -150,70 +173,70 @@ class Command(BaseCommand):
                 tags: Dict[str, Any],
             ) -> None:
                 if lat_raw is None or lon_raw is None:
-                    return  # missing centre (rare)
+                    return
                 try:
                     y = float(lat_raw)
                     x = float(lon_raw)
                 except (TypeError, ValueError):
                     return
 
-                if osm_id in known_ids:
-                    # Already known competitor: ensure proximity exists
-                    if not dry_run:
-                        try:
-                            comp = OSMDiscoveredCompetitor.objects.get(osm_id=osm_id)
-                        except OSMDiscoveredCompetitor.DoesNotExist:
-                            # It’s a freshly-found competitor that we haven’t flushed
-                            # to the database yet; proximity will be created after the
-                            # bulk_insert section, so just skip for now.
-                            pass
-                        else:
-                            self._make_proximity(comp, office, radius_km, new_proximities)
+                # ensure distance is inside radius (cheap PostGIS shortcut)
+                pt = Point(x, y, srid=4326)
+                if office.location.distance(pt) * 100 > radius_km:
                     return
 
-                pt = Point(x, y, srid=4326)
-                name = tags.get("name") or tags.get("operator") or "Unnamed"
+                # ----------------------------------------------------------------
+                #  (A) competitor already known globally
+                # ----------------------------------------------------------------
+                if osm_id in known_ids:
+                    if dry_run:
+                        return
+                    try:
+                        comp = OSMDiscoveredCompetitor.objects.get(osm_id=osm_id)
+                    except OSMDiscoveredCompetitor.DoesNotExist:
+                        return
+                    self._append_proximity(comp, office, new_proximities, dry_run)
+                    return  # done
 
-                # Candidate competitor object
+                # ----------------------------------------------------------------
+                #  (B) brand-new competitor
+                # ----------------------------------------------------------------
+                name = (
+                    tags.get("name")
+                    or tags.get("operator")
+                    or "Unnamed"
+                )
                 comp_obj = OSMDiscoveredCompetitor(
                     osm_id=osm_id,
                     osm_type=osm_type,
                     name_from_osm=name,
                     osm_location=pt,
-                    tags_from_osm=tags,
                     latitude=y,
                     longitude=x,
+                    tags_from_osm=tags,
                 )
                 if not dry_run:
                     new_competitors.append(comp_obj)
-
-                # Distance via PostGIS
-                dist_km = office.location.distance(pt) * 100
-                if dist_km <= radius_km:
-                    summary_rows.append(
-                        {
-                            "office_name": office.name,
-                            "office_city": office.city,
-                            "competitor_name": name,
-                            "osm_key": f"{osm_type}/{osm_id}",
-                            "dist_km": dist_km,
-                        }
-                    )
-                    if not dry_run:
-                        new_proximities.append(
-                            AgencyOSMCompetitorProximity(
-                                rma_office=office,
-                                osm_competitor=comp_obj,  # temp, id resolved later
-                            )
-                        )
                 known_ids.add(osm_id)
 
+                # proximity & summary
+                self._append_proximity(comp_obj, office, new_proximities, dry_run)
+                summary_rows.append(
+                    {
+                        "office_name": office.name,
+                        "office_city": office.city,
+                        "competitor_name": name,
+                        "osm_key": f"{osm_type}/{osm_id}",
+                        "dist_km": office.location.distance(pt) * 100,
+                    }
+                )
+
             # Nodes
-            for n in ov_result.nodes:
-                process_osm(n.id, "node", n.lat, n.lon, n.tags)
-            # Ways (use centre)
-            for w in ov_result.ways:
-                process_osm(
+            for n in result.nodes:
+                handle_osm(n.id, "node", n.lat, n.lon, n.tags)
+            # Ways (use computed centre)
+            for w in result.ways:
+                handle_osm(
                     w.id,
                     "way",
                     getattr(w, "center_lat", None),
@@ -223,12 +246,12 @@ class Command(BaseCommand):
 
             self.stdout.write(f"  {idx}/{offices.count()} – {office.name} done.")
 
-        # ---------------- BULK SAVE COMPETITORS -------------------- #
+        # ───────────── commit bulk objects ─────────────
         if not dry_run and new_competitors:
             OSMDiscoveredCompetitor.objects.bulk_create(
                 new_competitors, ignore_conflicts=True
             )
-            # Fetch assigned IDs
+            # map temporary objects to DB ids
             id_map = dict(
                 OSMDiscoveredCompetitor.objects.filter(
                     osm_id__in=[c.osm_id for c in new_competitors]
@@ -237,57 +260,65 @@ class Command(BaseCommand):
             for comp in new_competitors:
                 comp.id = id_map[comp.osm_id]
 
-        # ------------ RESOLVE FK & BULK SAVE PROXIMITIES ---------- #
         if not dry_run and new_proximities:
             for prox in new_proximities:
                 prox.osm_competitor_id = prox.osm_competitor.id
             AgencyOSMCompetitorProximity.objects.bulk_create(
-                new_proximities, ignore_conflicts=True
+                new_proximities,
+                ignore_conflicts=True,
             )
 
-        # ------------------------ SUMMARY -------------------------- #
-        if summary_rows:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"\n🚨 {len(summary_rows)} new competitor agencies!"
-                )
-            )
-            for r in summary_rows:
-                self.stdout.write(
-                    f"- {r['competitor_name']} near {r['office_name']} "
-                    f"({r['dist_km']:.1f} km)"
-                )
-            if not dry_run:
-                send_summary_mail(summary_rows)
-            else:
-                self.stdout.write(self.style.NOTICE("Dry-run: e-mail suppressed."))
-        else:
+        # ───────────── summary / notifications ─────────────
+        if not summary_rows:
             self.stdout.write(self.style.SUCCESS("\n✅ No new competitor agencies."))
+            return
 
-    # ------------ helper: guarantee proximity row --------------- #
-    def _make_proximity(
-        self,
-        comp: OSMDiscoveredCompetitor,
+        # Console overview
+        self.stdout.write(
+            self.style.WARNING(
+                f"\n🚨 {len(summary_rows)} new competitor agencies detected!"
+            )
+        )
+        for r in summary_rows:
+            self.stdout.write(
+                f"- {r['competitor_name']} near {r['office_name']} "
+                f"({r['dist_km']:.1f} km)"
+            )
+
+        if dry_run:
+            self.stdout.write(self.style.NOTICE("Dry-run → e-mail & notifications skipped."))
+            return
+
+        # 1) E-mail
+        send_summary_mail(summary_rows)
+
+        # 2) In-app notifications (deduplicated per (osm_id, office_id))
+        notified_pairs = set()
+        for prox in new_proximities:
+            pair = (prox.osm_competitor.osm_id, prox.rma_office_id)
+            if pair in notified_pairs:
+                continue
+            notified_pairs.add(pair)
+            notify_staff_competitor(
+                prox.osm_competitor.name_from_osm or "Unnamed",
+                prox.rma_office,
+            )
+
+    # ────────────────────── helper ──────────────────────
+    @staticmethod
+    def _append_proximity(
+        competitor: OSMDiscoveredCompetitor,
         office: RMAOffice,
-        radius_km: float,
-        bulk_list: Optional[List[AgencyOSMCompetitorProximity]] = None,
+        bulk_list: List[AgencyOSMCompetitorProximity],
+        dry_run: bool,
     ) -> None:
-        """
-        Ensure a proximity row exists; in bulk mode append to list,
-        otherwise create if missing.
-        """
-        if comp.osm_location is None:
+        """Add a proximity row (bulk or immediate)."""
+        if dry_run:
             return
-        if office.location.distance(comp.osm_location) * 100 > radius_km:
-            return
-
-        if bulk_list is not None:
-            bulk_list.append(
-                AgencyOSMCompetitorProximity(
-                    rma_office=office, osm_competitor=comp
-                )
+        bulk_list.append(
+            AgencyOSMCompetitorProximity(
+                rma_office=office,
+                osm_competitor=competitor,
+                first_seen_near_office=timezone.now(),
             )
-        else:
-            AgencyOSMCompetitorProximity.objects.get_or_create(
-                rma_office=office, osm_competitor=comp
-            )
+        )
