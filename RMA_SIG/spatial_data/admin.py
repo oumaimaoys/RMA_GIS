@@ -4,7 +4,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django import forms
 from django.contrib import messages
-from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables, CA, RegionAdministrative
+from .models import RMAOffice, RMABGD, RMAAgent, Bank, Competitor, Area, CoverageScore, Commune, Province, LossRatio, CoverageStats, Variables, CA, RegionAdministrative, OSMDiscoveredCompetitor, AgencyOSMCompetitorProximity
 import pandas as pd
 from django.http import HttpResponseRedirect
 from .forms import RMABGDForm
@@ -17,6 +17,9 @@ from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Point
 from django.forms import ModelForm
 from .forms import LatLonPointMixin
 from decimal import Decimal
+from django.contrib.gis import admin as geoadmin
+from django.utils.timezone import now
+
 
 class CsvImportForm(forms.Form):
     csv_file = forms.FileField()
@@ -885,3 +888,93 @@ class RegionAdministrativeAdmin(admin.ModelAdmin):
         names = [p.name for p in obj.provinces.all()[:5]]
         tail  = " …" if obj.provinces.count() > 5 else ""
         return ", ".join(names) + tail
+    
+
+class AgencyOSMCompetitorProximityInline(admin.TabularInline):
+    model = AgencyOSMCompetitorProximity
+    fk_name = "osm_competitor"
+    extra = 0
+    verbose_name_plural = "RMA offices nearby"
+    raw_id_fields = ("rma_office",)
+    readonly_fields = ("first_seen_near_office", "last_seen_near_office")
+    can_delete = False
+
+
+# ------------------------------------------------------------------ #
+#  MAIN COMPETITOR ADMIN                                             #
+# ------------------------------------------------------------------ #
+@admin.register(OSMDiscoveredCompetitor)
+class OSMDiscoveredCompetitorAdmin(geoadmin.OSMGeoAdmin):
+    """
+    • Inherits OSMGeoAdmin → interactive map for osm_location.  
+    • Inline shows which RMA offices the competitor is near.
+    """
+    list_display = (
+        "osm_id",
+        "osm_type",
+        "name_from_osm",
+        "pretty_address",
+        "first_seen_globally",
+        "last_seen_globally",
+        "age_days",
+    )
+    list_filter = ("osm_type", "first_seen_globally")
+    search_fields = (
+        "osm_id",
+        "name_from_osm",
+        "address_from_osm",
+        "tags_from_osm__name",   # JSON → icontains works on most DBs
+    )
+
+    readonly_fields = (
+        "osm_id",
+        "osm_type",
+        "first_seen_globally",
+        "last_seen_globally",
+        "age_days",
+    )
+
+    raw_id_fields = ()   # none; Point field already handled by OSMGeoAdmin
+    list_per_page = 50
+    default_lon =  -6.8400        # centre the OpenLayers widget on Morocco
+    default_lat =  33.9600
+    default_zoom = 6
+
+    inlines = (AgencyOSMCompetitorProximityInline,)
+
+    # ---------- helper columns ------------------------------------ #
+    @admin.display(description="Address", ordering="address_from_osm")
+    def pretty_address(self, obj):
+        if obj.address_from_osm:
+            return obj.address_from_osm[:60] + ("…" if len(obj.address_from_osm) > 60 else "")
+        return "—"
+
+    @admin.display(description="Age (days)")
+    def age_days(self, obj):
+        return (now() - obj.first_seen_globally).days
+
+
+# ------------------------------------------------------------------ #
+#  PROXIMITY ADMIN                                                   #
+# ------------------------------------------------------------------ #
+@admin.register(AgencyOSMCompetitorProximity)
+class AgencyOSMCompetitorProximityAdmin(admin.ModelAdmin):
+    """
+    One row per (RMA office ↔ OSM competitor) pair.
+    """
+    list_display = (
+        "osm_competitor",
+        "rma_office",
+        "first_seen_near_office",
+        "last_seen_near_office",
+    )
+    list_filter = ("rma_office__city",)
+    search_fields = (
+        "osm_competitor__name_from_osm",
+        "osm_competitor__address_from_osm",
+        "rma_office__name",
+        "rma_office__city",
+    )
+    raw_id_fields = ("osm_competitor", "rma_office")
+    readonly_fields = ("first_seen_near_office", "last_seen_near_office")
+    list_per_page = 50

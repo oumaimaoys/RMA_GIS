@@ -155,3 +155,26 @@ LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 ORS_API_KEY = '5b3ce3597851110001cf6248222406d5ed9b4d2aaa9b01eed02c50b4'
+
+ALERT_EMAIL_RECIPIENTS = ['ooyassine@insea.ac.ma']
+DEFAULT_SEARCH_RADIUS_KM = 1.0
+NOMINATIM_USER_AGENT = "RMACompetitorChecker/1.0 (ooyassine@insea.ac.ma)" 
+
+DEFAULT_FROM_EMAIL = "oumaima.oys@gmail.com"
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+# SMTP server
+EMAIL_HOST = "smtp.gmail.com"      # ← FQDN or IP of your mail-relay
+EMAIL_PORT = 587                    # 587 = STARTTLS, 465 = SSL, 25 = plain
+
+# Authentication
+EMAIL_HOST_USER = "oumaima.oys@gmail.com"
+EMAIL_HOST_PASSWORD = "utsn srki zuth biob"   # store in env var, not in git!
+
+# Transport security
+EMAIL_USE_TLS = True                # for port 587
+EMAIL_USE_SSL = False               # for port 465 (mutually exclusive)
+
+# Sender & default prefix
+EMAIL_SUBJECT_PREFIX = "[RMA-SIG]"

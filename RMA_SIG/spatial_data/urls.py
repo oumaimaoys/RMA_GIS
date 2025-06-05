@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/commune-scores.geojson",   views.commune_scores_geojson, name="commune-scores-geojson"),
     path("api/simulate-score/", views.simulate_score, name="simulate-score"),
     path('api/run-stats/', views.run_stats, name='run-stats'),
+    path('api/run-proximity-check/', views.run_proximity_check_view, name='run-proximity-check'),
 
 
 

@@ -321,3 +321,56 @@ class CA(models.Model):
 
     def __str__(self):
         return f"CA {self.CA_value} for {self.agency.name} in {self.year}"
+    
+
+class OSMDiscoveredCompetitor(models.Model):
+    """Competitors discovered via OpenStreetMap queries."""
+    osm_id = models.BigIntegerField(help_text="OpenStreetMap ID of the element")
+    osm_type = models.CharField(max_length=10, help_text="OSM element type: 'node', 'way', or 'relation'")
+    
+    name_from_osm = models.CharField(max_length=255, null=True, blank=True, help_text="Name as found on OSM")
+    address_from_osm = models.TextField(null=True, blank=True, help_text="Address as found on OSM")
+    
+    # Store both individual lat/lon and a PointField for consistency and GeoDjango queries
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    osm_location = models.PointField(srid=4326, null=True, blank=True, help_text="Geometric location from OSM")
+    
+    tags_from_osm = models.JSONField(default=dict, help_text="Raw OSM tags associated with the place")
+    
+    first_seen_globally = models.DateTimeField(default=timezone.now)
+    last_seen_globally = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('osm_id', 'osm_type') # OSM ID and type form a unique key
+        verbose_name = "OSM Discovered Competitor"
+        verbose_name_plural = "OSM Discovered Competitors"
+
+    def save(self, *args, **kwargs):
+        # If lat/lon are provided and osm_location isn't, create the Point
+        if self.latitude is not None and self.longitude is not None and not self.osm_location:
+            self.osm_location = Point(self.longitude, self.latitude, srid=4326)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name_from_osm or f"OSM {self.osm_type.upper()}/{self.osm_id}"
+
+# --- MODIFIED Proximity Model to link RMAOffice with OSMDiscoveredCompetitor ---
+class AgencyOSMCompetitorProximity(models.Model):
+    """
+    Tracks when an OSM-discovered competitor is found near a specific RMA office.
+    """
+    rma_office = models.ForeignKey(RMAOffice, on_delete=models.CASCADE)
+    osm_competitor = models.ForeignKey(OSMDiscoveredCompetitor, on_delete=models.CASCADE)
+    
+    first_seen_near_office = models.DateTimeField(default=timezone.now)
+    last_seen_near_office = models.DateTimeField(auto_now=True)
+    # distance_km = models.FloatField(null=True, blank=True) # Optional: store distance when found
+
+    class Meta:
+        unique_together = ('rma_office', 'osm_competitor')
+        verbose_name = "RMA Office - OSM Competitor Proximity"
+        verbose_name_plural = "RMA Office - OSM Competitor Proximities"
+
+    def __str__(self):
+        return f"{self.osm_competitor} near {self.rma_office.name}"

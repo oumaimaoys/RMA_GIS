@@ -174,6 +174,24 @@ def run_score_view(request):
             {"status": "error", "detail": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+    
+@api_view(["POST"])
+def run_proximity_check_view(request):
+    """
+    Trigger the nightly AHP‐weighted coverage‐score recalculation.
+    """
+    try:
+        logger.info("Received POST to run-proximity-check; invoking checkfor_competitors")
+        call_command("checkfor_competitors")
+        logger.info("checkfor_competitors completed successfully")
+        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.exception("Error running checkfor_competitors")
+        return Response(
+            {"status": "error", "detail": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(["POST"])
