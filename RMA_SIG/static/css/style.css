@@ -1,80 +1,421 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
-*{
+:root {
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --secondary-color: #64748b;
+  --accent-color: #06b6d4;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --border-radius: 0.75rem;
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
 }
-body{
-  font-family: 'Poppins','Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    sans-serif;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  padding-top: 80px; /* Account for fixed navbar */
 }
+
+/* ──────────────────────────────────────────────────
+   ENHANCED NAVBAR (fixed at top)
+   ────────────────────────────────────────────────── */
 nav {
   position: fixed;
-  height: 50px;
   top: 0;
   left: 0;
-  width: 100%;
-  z-index: 1000;        /* sit above everything else */
-  background-color: #F5F5F5;
-  box-shadow: 3px 3px 5px rgba(0,0,0,0.1);
-}
-nav ul{
-  width: 100%;
-  list-style: none;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-}
-nav li{
-  height: 50px;
-}
-nav a{
-  height: 100%;
-  padding: 0 30px;
-  text-decoration: none;
-  display: flex;
-  align-items: center;
-  color: black;
-}
-nav a:hover{
-  background-color: #f0f0f0;
-}
-nav li:first-child{
-  margin-right: auto;
-}
-.sidebar{
-  position: fixed;
-  top: 0; 
   right: 0;
-  height: 100vh;
-  width: 250px;
-  background-color: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
-  box-shadow: -10px 0 10px rgba(0, 0, 0, 0.1);
+  height: 80px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+  z-index: 1000;
+}
+
+nav:hover {
+  box-shadow: var(--shadow-md);
+}
+
+nav ul {
+  width: 100%;
+  height: 100%;
   list-style: none;
-  display: none;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  /* Removed justify-content: space-between */
+  padding: 0 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
-.sidebar li{
-  width: 100%;
+
+/* (1) Logo is always the first <li> */
+nav li:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
-.sidebar a{
-  width: 100%;
+
+nav .logo {
+  height: 40px;
+  width: auto;
+  transition: var(--transition);
 }
-.menu-button{
-  display: none;
+
+nav .logo:hover {
+  transform: scale(1.05);
 }
-@media(max-width: 800px){
-  .hideOnMobile{
-    display: none;
-  }
-  .menu-button{
-    display: block;
-  }
+
+/* (2) .nav-links container holds all desktop links ─ pushed to the right via margin-left:auto */
+nav .nav-links {
+  display: flex;
+  gap: 1rem;           /* gap between each link */
+  align-items: center;
+  margin-left: auto;   /* <--- pushes these links all the way right */
 }
-@media(max-width: 400px){
-  .sidebar{
-    width: 100%;
+
+/* Hide nav-links on small screens via your existing .hideOnMobile utility */
+.hideOnMobile {
+  /* we assume .hideOnMobile is already used as a class on .nav-links in your HTML */
+}
+
+@media (max-width: 992px) {
+  .hideOnMobile {
+    display: none !important;
   }
 }
 
+/* Style for each <a> inside nav-links (and any other nav <a>) */
+nav a {
+  height: auto;
+  padding: 0.75rem 1.5rem;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-weight: 500;
+  border-radius: var(--border-radius);
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+nav a:hover {
+  background: linear-gradient(135deg, var(--primary-color),
+                              var(--accent-color));
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+nav a::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent,
+                              rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s;
+}
+
+nav a:hover::before {
+  left: 100%;
+}
+
+/* ──────────────────────────────────────────────────
+   HAMBURGER / MOBILE BUTTON
+   ────────────────────────────────────────────────── */
+/* Hide it on desktop, show on mobile */
+.menu-button {
+  display: none; /* shown only under 992px */
+  background: var(--bg-tertiary);
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.menu-button:hover {
+  background: var(--primary-color);
+  color: white;
+  transform: scale(1.05);
+}
+
+.menu-button::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%,
+                              transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s, height 0.3s;
+}
+
+.menu-button:active::before {
+  width: 100px;
+  height: 100px;
+}
+
+/* Show hamburger (mobile-only) at small screens, hide desktop links */
+@media (max-width: 992px) {
+  .menu-button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto; /* pushes hamburger to the right */
+  }
+}
+
+/* ──────────────────────────────────────────────────
+   SIDEBAR (slides over navbar)
+   ────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  right: -300px; /* hidden initially */
+  height: 100vh;
+  width: 300px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: var(--shadow-lg);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem 0;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-left: 1px solid var(--border-color);
+  z-index: 1100; /* must be > nav’s z-index (1000) */
+}
+
+.sidebar.show {
+  right: 0;
+}
+
+.sidebar .close-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: var(--bg-tertiary);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.sidebar .close-btn:hover {
+  background: var(--danger-color);
+  color: white;
+  transform: rotate(90deg);
+}
+
+.sidebar li {
+  width: 100%;
+  margin: 0.25rem 0;
+}
+
+.sidebar a {
+  width: 100%;
+  padding: 1rem 2rem;
+  border-radius: 0;
+  margin: 0;
+  border-left: 4px solid transparent;
+  transition: var(--transition);
+}
+
+.sidebar a:hover {
+  background: var(--bg-secondary);
+  border-left-color: var(--primary-color);
+  transform: translateX(8px);
+}
+
+/* ──────────────────────────────────────────────────
+   OVERLAY BEHIND SIDEBAR
+   ────────────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1090; /* just under the sidebar */
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--transition);
+}
+
+.overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ──────────────────────────────────────────────────
+   MAIN CONTENT
+   ────────────────────────────────────────────────── */
+main {
+  min-height: calc(100vh - 80px);
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ──────────────────────────────────────────────────
+   NOTIFICATION BADGE (optional, from your previous code)
+   ────────────────────────────────────────────────── */
+.notification-badge {
+  position: relative;
+}
+
+.notification-badge::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background: var(--danger-color);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ──────────────────────────────────────────────────
+   RESPONSIVE TWEAKS
+   ────────────────────────────────────────────────── */
+@media (max-width: 992px) {
+  /* Already covered .hideOnMobile and .menu-button above */
+
+  nav ul {
+    padding: 0 1rem;
+  }
+
+  main {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 576px) {
+  nav {
+    height: 70px;
+  }
+
+  body {
+    padding-top: 70px;
+  }
+
+  .sidebar {
+    width: 100%;
+    right: -100%;
+  }
+
+  nav ul {
+    padding: 0 0.75rem;
+  }
+
+  .logo {
+    height: 32px !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────
+   LOADING ANIMATION FOR DYNAMIC CONTENT
+   ────────────────────────────────────────────────── */
+.loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent,
+                              rgba(255,255,255,0.5), transparent);
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* ──────────────────────────────────────────────────
+   ENHANCED FORM CONTROLS
+   ────────────────────────────────────────────────── */
+.form-control,
+.btn {
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+
+.form-control:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-color),
+                              var(--accent-color));
+  border: none;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}

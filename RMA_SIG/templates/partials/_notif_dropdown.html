@@ -79,7 +79,10 @@
 </li>
 
 <style>
-/* Enhanced notification dropdown styles */
+/* ------------------------------------------------------------
+   Notification dropdown styles (copied from your snippet)
+   Adjust z-index here so it is never clipped:
+------------------------------------------------------------ */
 .notif-menu {
   min-width: 22rem;
   max-width: 24rem;
@@ -88,13 +91,7 @@
   border-radius: 8px;
   overflow: hidden;
   padding: 0;
-}
-
-.notif-menu .dropdown-header {
-  background: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-  margin: 0;
-  padding: 0.75rem 1rem;
+  z-index: 1055; /* ensure it floats above the fixed navbar */
 }
 
 .notif-scroll-container {
@@ -200,7 +197,7 @@
   background: #adb5bd;
 }
 
-/* Badge improvements */
+/* Badge “pulse” effect */
 .notif-badge {
   position: absolute;
   top: 0;

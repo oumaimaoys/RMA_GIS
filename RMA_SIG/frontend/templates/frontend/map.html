@@ -11,88 +11,118 @@
 {% block title %}Map — RMA SIG{% endblock %}
 
 {% block scripts %}
-<div id="toggle-container">
-  <div class="toggle-switch">
-    <form id="search-box" class="search-box leaflet-control">
-      <input id="search-input"
-            type="text"
-            placeholder="Rechercher une ville"
-            autocomplete="off" />
-      <button type="submit" aria-label="Rechercher"></button>
-    </form>
+  <!-- (A) Your Leaflet map DIV (fills entire viewport beneath the navbar) -->
+<div id="map" style="position:absolute; top:0; bottom:0; right:0; left:0;"></div>
+
+<!--─────────────────────────────────────────────────────────────────
+   (B) COLLAPSIBLE SIDEBAR WRAPPER
+──────────────────────────────────────────────────────────────────-->
+<div id="toggle-container-wrapper">
+  <!-- (B1) The actual sidebar panel with all your controls -->
+  <div id="toggle-container">
+    <!-- ─────── SEARCH BOX ─────── -->
+    <div class="toggle-switch">
+      <form id="search-box" class="search-box leaflet-control" onsubmit="return false;">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Rechercher une ville"
+          autocomplete="off"
+        />
+        <button type="submit" aria-label="Rechercher"></button>
+      </form>
+    </div>
+
+    <!-- ─────── MANDANTE FILTER ─────── -->
+    <div class="toggle-switch">
+      <label class="layer-label" for="mandante-filter">Mandante</label>
+      <select
+        id="mandante-filter"
+        style="padding:4px 6px; border-radius:4px; font-size:.9rem;"
+      >
+        <option value="ALL" selected>Tous</option>
+        <!-- options injected by JS once GeoJSON loads -->
+      </select>
+    </div>
+
+    <!-- ─────── PROVINCES / COMMUNES TOGGLE ─────── -->
+    <div class="toggle-switch">
+      <label class="layer-label" for="layer-toggle">Provinces</label>
+      <label class="switch">
+        <input type="checkbox" id="layer-toggle">
+        <span class="slider"></span>
+      </label>
+      <label class="layer-label" for="layer-toggle">Communes</label>
+    </div>
+
+    <!-- ─────── NORMAL / HEATMAP TOGGLE ─────── -->
+    <div class="toggle-switch">
+      <label class="layer-label" for="heatmap-toggle">Normal</label>
+      <label class="switch">
+        <input type="checkbox" id="heatmap-toggle">
+        <span class="slider"></span>
+      </label>
+      <label class="layer-label" for="heatmap-toggle">Heatmap</label>
+    </div>
+
+    <!-- ─────── ALL AGENCIES / RMA ONLY TOGGLE ─────── -->
+    <div class="toggle-switch">
+      <label class="layer-label" for="rma-only-toggle">All Agencies</label>
+      <label class="switch">
+        <input type="checkbox" id="rma-only-toggle">
+        <span class="slider"></span>
+      </label>
+      <label class="layer-label" for="rma-only-toggle">RMA Only</label>
+    </div>
+
+    <!-- ─────── NORMAL / COVERAGE SCORE TOGGLE ─────── -->
+    <div class="toggle-switch">
+      <label class="layer-label" for="score-toggle">Normal</label>
+      <label class="switch">
+        <input type="checkbox" id="score-toggle">
+        <span class="slider"></span>
+      </label>
+      <label class="layer-label" for="score-toggle">Coverage Score</label>
+    </div>
+
+    <!-- ─────── NEW SITE BUTTON ─────── -->
+    <div class="toggle-switch">
+      <button id="simulateur-btn" class="sim-btn">
+        <i class="bi bi-plus-lg"></i> Nouveau site
+      </button>
+    </div>
+
+    <!-- ─────── EXPORT PDF BUTTON ─────── -->
+    <div class="toggle-switch">
+      <button id="export-pdf-btn" class="export-btn">
+        Export PDF
+      </button>
+    </div>
   </div>
-  <div class="toggle-switch" style="margin-top:8px;">
-    <label class="layer-label" for="mandante-filter">Mandante</label>
-    <select id="mandante-filter"
-            style="padding:4px 6px; border-radius:4px; font-size:.9rem;">
-      <option value="ALL" selected>Tous</option>
-      <!-- options are injected by JS once the GeoJSON is loaded -->
-    </select>
+
+  <!-- (B2) The small chevron “handle” that remains visible when collapsed -->
+  <div id="sidebar-toggle">
+    <i class="bi bi-chevron-left"></i>
   </div>
-  <div class="toggle-switch" style="margin-left: 38px;margin-top: 8px;">
-    <span class="layer-label">Provinces</span>
-    <label class="switch">
-      <input type="checkbox" id="layer-toggle">
-      <span class="slider"></span>
-    </label>
-    <span class="layer-label">Communes</span>
-  </div>
-  <div class="toggle-switch" style="margin-top:8px; margin-left: 38px;">
-    <span class="layer-label">Normal</span>
-    <label class="switch">
-      <input type="checkbox" id="heatmap-toggle">
-      <span class="slider"></span>
-    </label>
-    <span class="layer-label">Heatmap</span>
-  </div>
-  <div class="toggle-switch" style="margin-top:8px;">
-    <span class="layer-label">All Agencies</span>
-    <label class="switch">
-      <input type="checkbox" id="rma-only-toggle">
-      <span class="slider"></span>
-    </label>
-    <span class="layer-label">RMA Only</span>
-  </div>
-   <div class="toggle-switch" style="margin-top:8px;margin-left: 87px;">
-    <span class="layer-label">normal</span>
-    <label class="switch">
-      <input type="checkbox" id="score-toggle">
-      <span class="slider"></span>
-    </label>
-    <span class="layer-label">coverage score</span>
-  </div>
-  <div class="toggle-switch" style="margin-top:8px;margin-left:38px;">
-    <button id="simulateur-btn" class="sim-btn">
-      ➕ Nouveau site
-    </button>
-  </div>
-  <!-- Exp
-  <!-- Export button -->
-  <button id="export-pdf-btn" class="export-btn"
-          style="margin-top:8px;margin-left:10px;padding:6px 14px;
-                background:#d35400;color:#fff;border:none;border-radius:6px;
-                cursor:pointer;">
-    Export PDF
-  </button>
 </div>
 
-<div id="info-card" style="display: none; min-width: fit-content;">
-  <h3 id="region-name"></h3>
-  <!-- NEW -->
-  <p><strong>Score de couverture&nbsp;(0-100):</strong>
-     <span id="region-score"></span></p>
-  <p><strong>Potentiel:</strong>
-     <span id="region-potential"></span></p>
-
+<!--─────────────────────────────────────────────────────────────────
+   (C) INFO CARD – appears at bottom‐right when you click a region
+──────────────────────────────────────────────────────────────────-->
+<div id="info-card">
+  <button class="close-btn" aria-label="Close">&times;</button>
+  <h3 id="region-name">Region Name</h3>
+  <p><strong>Score de couverture&nbsp;(0-100):</strong> <span id="region-score">—</span></p>
+  <p><strong>Potentiel:</strong> <span id="region-potential">—</span></p>
   <hr>
-  <p><strong>Agences RMA:</strong> <span id="region-rma-count"></span></p>
-  <p><strong>Population:</strong> <span id="region-population"></span></p>
-  <p><strong>Population assurable:</strong> <span id="region-insured-population"></span></p>
-  <p><strong>Nombre de vehicules estimées:</strong> <span id="region-vehicules"></span></p>
+  <p><strong>Agences RMA:</strong> <span id="region-rma-count">—</span></p>
+  <p><strong>Population:</strong> <span id="region-population">—</span></p>
+  <p><strong>Population assurable:</strong> <span id="region-insured-population">—</span></p>
+  <p><strong>Nombre de véhicules estimées:</strong> <span id="region-vehicules">—</span></p>
 </div>
+
 
   
-<div id="map"></div>
 <div id="loading-screen" style="
   position: fixed;
   top: 0; left: 0;
@@ -1055,5 +1085,26 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+</script>
+<script>
+ document.addEventListener("DOMContentLoaded", function () {
+  const sidebarToggle   = document.getElementById("sidebar-toggle");
+  const toggleContainer = document.getElementById("toggle-container");
+  const infoCard        = document.getElementById("info-card");
+  const infoCloseBtn    = infoCard.querySelector(".close-btn");
+
+  // 1) Clicking the chevron handle should collapse/expand the sidebar panel
+  sidebarToggle.addEventListener("click", () => {
+    // Toggle “collapsed” on the panel
+    toggleContainer.classList.toggle("collapsed");
+    // Toggle “collapsed” on the chevron itself (so the arrow flips)
+    sidebarToggle.classList.toggle("collapsed");
+  });
+
+  // 2) Hide the info card when its “×” is clicked
+  infoCloseBtn.addEventListener("click", () => {
+    infoCard.style.display = "none";
+  });
+});
 </script>
 {% endblock %}

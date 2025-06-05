@@ -913,7 +913,7 @@ class OSMDiscoveredCompetitorAdmin(geoadmin.OSMGeoAdmin):
         "osm_id",
         "osm_type",
         "name_from_osm",
-        "pretty_address",
+        "osm_location",
         "first_seen_globally",
         "last_seen_globally",
         "age_days",

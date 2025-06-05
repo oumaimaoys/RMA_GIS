@@ -3,6 +3,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone # For default timestamps
 from decimal import Decimal            # optional but keeps full precision
 from django.core.exceptions import ObjectDoesNotExist
+# Importing Point for GeoDjango
+from django.contrib.gis.geos import Point
 
 # --- Your existing models (RMAOffice, RMABGD, RMAAgent, manager, Bank, Competitor) ---
 # These seem fine for their purpose and are mostly used as data sources

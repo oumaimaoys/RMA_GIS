@@ -12,11 +12,25 @@ def notifications_processor(request):
         }
     return {}
 
+
 def unread_notifications(request):
-    if request.user.is_authenticated:
-        qs = request.user.notifications
+    """
+    Always inject two variables into the template context:
+      • unread_notifications_count – the # of unread notifications
+      • unread_notifications       – a QuerySet of the most recent unread notifications
+    """
+    if not request.user.is_authenticated:
         return {
-            "unread_notifications_count": qs.filter(read=False).count(),
-            "unread_notifications"      : qs.order_by("-created_at")[:5],  # for dropdown
+            "unread_notifications_count": 0,
+            "unread_notifications":       []
         }
-    return {}
+
+    # Assuming your Notification model has a `read` boolean field,
+    # a `created_at` DateTime, and you have related_name="notifications"
+    # on the user ForeignKey. Adjust as needed.
+    qs = request.user.notifications.all().order_by("-created_at")
+    unread = qs.filter(read=False)
+    return {
+        "unread_notifications_count": unread.count(),
+        "unread_notifications":       unread[:5],  # limit to latest 5
+    }
