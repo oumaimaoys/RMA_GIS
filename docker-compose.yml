@@ -258,7 +258,6 @@ services:
     networks:
       - confluent
 volumes:
-  postgris_data:
   airflow_pgdata:
   postgres_data:
   postgres-db-volume:

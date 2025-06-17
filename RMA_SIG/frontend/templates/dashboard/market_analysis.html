@@ -1,0 +1,365 @@
+{# templates/market_analysis.html #}
+{% extends "base.html" %}
+{% load static %}
+
+{# 1) Page title #}
+{% block title %}Market Analysis Dashboard{% endblock %}
+
+{# 2) Page-specific CSS #}
+{% block head %}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+    }
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: rgba(255,255,255,0.95);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #2c3e50, #3498db);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .header p {
+      font-size: 1.1rem; opacity: 0.9;
+    }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px,1fr));
+      gap: 30px;
+      padding: 30px;
+    }
+    .analysis-section {
+      background: white;
+      border-radius: 15px;
+      padding: 25px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.05);
+      transition: transform .3s ease, box-shadow .3s ease;
+    }
+    .analysis-section:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.12);
+    }
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid;
+      display: flex;
+      align-items: center;
+    }
+    .section-title::before {
+      content: '';
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 10px;
+    }
+    .high-potential .section-title {
+      color: #27ae60; border-color: #27ae60;
+    }
+    .high-potential .section-title::before {
+      background: #27ae60;
+    }
+    .underserved .section-title {
+      color: #f39c12; border-color: #f39c12;
+    }
+    .underserved .section-title::before {
+      background: #f39c12;
+    }
+    .oversaturated .section-title {
+      color: #e74c3c; border-color: #e74c3c;
+    }
+    .oversaturated .section-title::before {
+      background: #e74c3c;
+    }
+    .penetration .section-title {
+      color: #8e44ad; border-color: #8e44ad;
+    }
+    .penetration .section-title::before {
+      background: #8e44ad;
+    }
+    .market-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .market-table th,
+    .market-table td {
+      padding: 12px 8px;
+      text-align: left;
+      border-bottom: 1px solid #ecf0f1;
+      font-size: 0.9rem;
+    }
+    .market-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #2c3e50;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      letter-spacing: 0.5px;
+    }
+    .market-table tr:hover {
+      background: rgba(52,152,219,0.05);
+      transition: background .2s ease;
+    }
+    .metric-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 15px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: white;
+    }
+    .high-competition  { background: #e74c3c; }
+    .medium-competition{ background: #f39c12; }
+    .low-competition   { background: #27ae60; }
+    .population-large  { background: #3498db; }
+    .population-medium { background: #95a5a6; }
+    .no-data-message {
+      text-align: center;
+      color: #7f8c8d;
+      font-style: italic;
+      padding: 30px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      border: 2px dashed #bdc3c7;
+    }
+    .penetration-card {
+      background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+      color: white;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 15px;
+      transition: transform .2s ease;
+    }
+    .penetration-card:hover {
+      transform: scale(1.02);
+    }
+    .penetration-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 10px; }
+    .penetration-stats {
+      display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; font-size: 0.9rem;
+    }
+    .stat-item {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .stat-value {
+      font-weight: 600;
+      background: rgba(255,255,255,0.2);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    @media (max-width:768px) {
+      .dashboard-grid { grid-template-columns: 1fr; padding: 15px; gap: 20px; }
+      .header h1 { font-size: 2rem; }
+      .analysis-section { padding: 20px; }
+      .market-table { font-size: 0.8rem; }
+      .market-table th,
+      .market-table td { padding: 8px 4px; }
+    }
+  </style>
+{% endblock %}
+
+{# 3) Page content #}
+{% block content %}
+  <div class="dashboard-container">
+    <div class="header">
+      <h1>Market Analysis Dashboard</h1>
+      <p>Comprehensive market intelligence and competitive analysis</p>
+    </div>
+
+    <div class="dashboard-grid">
+      {# High Potential, Low Competition #}
+      <div class="analysis-section high-potential">
+        <h2 class="section-title">High Potential, Low Competition</h2>
+        {% if high_potential_low_competition %}
+          <table class="market-table">
+            <thead>
+              <tr>
+                <th>Commune</th>
+                <th>Population</th>
+                <th>Competition</th>
+                <th>Opportunity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in high_potential_low_competition %}
+                <tr>
+                  <td><strong>{{ c.name }}</strong></td>
+                  <td>
+                    <span class="metric-badge population-large">
+                      {{ c.population|floatformat:0 }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="metric-badge low-competition">
+                      {{ c.competition_count }} competitors
+                    </span>
+                  </td>
+                  <td>
+                    {% if c.population > 20000 %}
+                      <span class="metric-badge" style="background:#27ae60">Excellent</span>
+                    {% elif c.population > 10000 %}
+                      <span class="metric-badge" style="background:#f39c12">Good</span>
+                    {% else %}
+                      <span class="metric-badge" style="background:#95a5a6">Moderate</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="no-data-message">
+            No high potential, low competition markets found.
+          </div>
+        {% endif %}
+      </div>
+
+      {# Underserved Markets #}
+      <div class="analysis-section underserved">
+        <h2 class="section-title">Underserved Markets</h2>
+        {% if underserved_markets %}
+          <table class="market-table">
+            <thead>
+              <tr>
+                <th>Commune</th>
+                <th>Population</th>
+                <th>Competition Intensity</th>
+                <th>Market Gap</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in underserved_markets %}
+                <tr>
+                  <td><strong>{{ c.name }}</strong></td>
+                  <td>
+                    <span class="metric-badge population-large">
+                      {{ c.population|floatformat:0 }}
+                    </span>
+                  </td>
+                  <td>{{ c.competition_intensity|floatformat:1 }}/10k</td>
+                  <td>
+                    {% if c.competition_intensity < 2 %}
+                      <span class="metric-badge" style="background:#e74c3c">Critical Gap</span>
+                    {% elif c.competition_intensity < 4 %}
+                      <span class="metric-badge" style="background:#f39c12">Significant Gap</span>
+                    {% else %}
+                      <span class="metric-badge" style="background:#95a5a6">Moderate Gap</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="no-data-message">
+            No underserved markets identified.
+          </div>
+        {% endif %}
+      </div>
+
+      {# Oversaturated Markets #}
+      <div class="analysis-section oversaturated">
+        <h2 class="section-title">Oversaturated Markets</h2>
+        {% if oversaturated_markets %}
+          <table class="market-table">
+            <thead>
+              <tr>
+                <th>Commune</th>
+                <th>Population</th>
+                <th>Competition Intensity</th>
+                <th>Market Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in oversaturated_markets %}
+                <tr>
+                  <td><strong>{{ c.name }}</strong></td>
+                  <td>
+                    <span class="metric-badge population-medium">
+                      {{ c.population|floatformat:0 }}
+                    </span>
+                  </td>
+                  <td>{{ c.competition_intensity|floatformat:1 }}/10k</td>
+                  <td>
+                    {% if c.competition_intensity > 30 %}
+                      <span class="metric-badge high-competition">Extremely Saturated</span>
+                    {% else %}
+                      <span class="metric-badge medium-competition">Highly Saturated</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="no-data-message">
+            No oversaturated markets detected.
+          </div>
+        {% endif %}
+      </div>
+
+      {# Market Penetration Analysis #}
+      <div class="analysis-section penetration">
+        <h2 class="section-title">Market Penetration Analysis</h2>
+        {% if penetration_analysis %}
+          {% for analysis in penetration_analysis %}
+            <div class="penetration-card">
+              <div class="penetration-header">{{ analysis.province }}</div>
+              <div class="penetration-stats">
+                <div class="stat-item">
+                  <span>Total Population:</span>
+                  <span class="stat-value">{{ analysis.total_population|floatformat:0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <span>Insured Population:</span>
+                  <span class="stat-value">{{ analysis.insured_population|floatformat:0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <span>Penetration Rate:</span>
+                  <span class="stat-value">{{ analysis.penetration_rate }}%</span>
+                </div>
+                <div class="stat-item">
+                  <span>Est. Vehicles:</span>
+                  <span class="stat-value">{{ analysis.estimated_vehicles|floatformat:0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <span>Competition Count:</span>
+                  <span class="stat-value">{{ analysis.competition_count }}</span>
+                </div>
+                <div class="stat-item">
+                  <span>Market Opportunity:</span>
+                  <span class="stat-value">
+                    {% if analysis.penetration_rate < 30 %}High
+                    {% elif analysis.penetration_rate < 60 %}Medium
+                    {% else %}Low{% endif %}
+                  </span>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-data-message">
+            No penetration analysis data available.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

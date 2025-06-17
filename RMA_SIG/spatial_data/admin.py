@@ -393,7 +393,7 @@ class CompetitorAdmin(LatLonPointAdminMixin, BaseModelAdmin):
 
 @admin.register(Commune)
 class CommuneAdmin(admin.ModelAdmin):
-    list_display = ('name', 'population',  'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
+    list_display = ('id','name', 'population',  'insured_population', 'estimated_vehicles','bank_count', 'bank_intensity', 'competition_intensity')
     search_fields = ('name',)
 
     add_form_template = "admin/spatial_data/Commune/import_form.html"

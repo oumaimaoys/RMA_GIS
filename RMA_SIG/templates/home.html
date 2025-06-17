@@ -14,15 +14,79 @@
 
   <!-- MAIN BODY -->
   <section class="container my-5">
-    <div class="card mx-auto" style="max-width: 20rem;">
-      <img 
-        src="{% static 'assets/map_icon.png' %}" 
-        class="card-img-top" 
-        alt="Map thumbnail">
-      <div class="card-body text-center">
-        <h5 class="card-title">Interactive Map</h5>
-        <p class="card-text">Click below to explore agency locations and scores.</p>
-        <a href="{% url 'frontend:map' %}" class="btn btn-primary">Go to Map</a>
+    <div class="row justify-content-center">
+      <!-- Dashboard Card -->
+      <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+          <img 
+            src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=200&fit=crop&auto=format" 
+            class="card-img-top" 
+            alt="Dashboard"
+            style="height: 200px; object-fit: cover;">
+          <div class="card-body text-center d-flex flex-column">
+            <h5 class="card-title">Dashboard</h5>
+            <p class="card-text flex-grow-1">View comprehensive analytics and key performance indicators.</p>
+            <a href="{% url 'frontend:main_dashboard' %}" class="btn btn-primary mt-auto">View Dashboard</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Map Card -->
+      <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+          <img 
+            src="https://images.unsplash.com/photo-1524661135-423995f22d0b?w=400&h=200&fit=crop&auto=format" 
+            class="card-img-top" 
+            alt="Interactive Map"
+            style="height: 200px; object-fit: cover;">
+          <div class="card-body text-center d-flex flex-column">
+            <h5 class="card-title">Interactive Map</h5>
+            <p class="card-text flex-grow-1">Explore agency locations and coverage scores on our interactive map.</p>
+            <a href="{% url 'frontend:map' %}" class="btn btn-primary mt-auto">Go to Map</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market Analysis Card -->
+      <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+          <img 
+            src="https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=400&h=200&fit=crop&auto=format" 
+            class="card-img-top" 
+            alt="Market Analysis"
+            style="height: 200px; object-fit: cover;">
+          <div class="card-body text-center d-flex flex-column">
+            <h5 class="card-title">Market Analysis</h5>
+            <p class="card-text flex-grow-1">Analyze market trends and opportunities in different regions.</p>
+            <a href="{% url 'frontend:market_analysis' %}" class="btn btn-primary mt-auto">View Analysis</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- RMA Performance Card -->
+      <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100 shadow-sm">
+          <img 
+            src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=200&fit=crop&auto=format" 
+            class="card-img-top" 
+            alt="RMA Performance"
+            style="height: 200px; object-fit: cover;">
+          <div class="card-body text-center d-flex flex-column">
+            <h5 class="card-title">RMA Performance</h5>
+            <p class="card-text flex-grow-1">Track and evaluate RMA agency performance metrics.</p>
+            <a href="{% url 'frontend:rma_performance' %}" class="btn btn-primary mt-auto">View Performance</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Additional Info Section -->
+    <div class="row mt-5">
+      <div class="col-12 text-center">
+        <h3 class="mb-4">Your Complete GIS Solution</h3>
+        <p class="lead text-muted">
+          Navigate through our comprehensive tools to analyze, plan, and optimize your RMA network coverage.
+        </p>
       </div>
     </div>
   </section>

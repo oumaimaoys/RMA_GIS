@@ -1,343 +1,683 @@
 /*─────────────────────────────────────────────────────────────────
+  MODERN ENHANCED SIDEBAR STYLES
+──────────────────────────────────────────────────────────────────*/
+
+/* Modern CSS Variables for consistent theming */
+:root {
+  --sidebar-width: 280px;
+  --sidebar-bg: rgba(255, 255, 255, 0.95);
+  --sidebar-border: rgba(226, 232, 240, 0.8);
+  --sidebar-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --success-color: #10b981;
+  --success-hover: #059669;
+  --warning-color: #f59e0b;
+  --warning-hover: #d97706;
+  --danger-color: #ef4444;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  --hover-bg: rgba(248, 250, 252, 0.8);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --border-radius: 12px;
+  --border-radius-sm: 8px;
+}
+
+/*─────────────────────────────────────────────────────────────────
   WRAPPER AROUND THE SIDEBAR + CHEVRON HANDLE
 ──────────────────────────────────────────────────────────────────*/
 #toggle-container-wrapper {
   position: absolute;
-  top: 80px;                     /* sits right below the fixed navbar (80px height) */
+  top: 80px;
   left: 0;
   bottom: 0;
   display: flex;
   align-items: stretch;
-  z-index: 1001;                 /* slightly above the map but below the info‐card (1002) */
+  z-index: 1001;
   overflow: visible;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /*─────────────────────────────────────────────────────────────────
   THE SIDEBAR PANEL ITSELF
 ──────────────────────────────────────────────────────────────────*/
 #toggle-container {
-  width: 240px;  
-  background: #ffffff;
-  border-right: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
-  border-top-right-radius: 6px;
-  border-bottom-right-radius: 6px;
-  padding: 1rem;
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--sidebar-border);
+  border-left: none;
+  box-shadow: var(--sidebar-shadow);
+  border-top-right-radius: var(--border-radius);
+  border-bottom-right-radius: var(--border-radius);
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  transition: transform 0.3s ease-in-out;
-  transform: translateX(0);      /* fully visible by default */
+  gap: 1.25rem;
+  transition: var(--transition-smooth);
+  transform: translateX(0);
   box-sizing: border-box;
+  position: relative;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-muted) transparent;
 }
 
-/* When “collapsed” (add the class .collapsed via JS),
-   slide the sidebar almost completely off-screen. */
+/* Custom scrollbar for webkit browsers */
+#toggle-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+#toggle-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#toggle-container::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+#toggle-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Collapsed state with smooth animation */
 #toggle-container.collapsed {
-  transform: translateX(-220px);
+  transform: translateX(calc(-1 * var(--sidebar-width) + 40px));
+}
+
+/* Add a subtle gradient overlay */
+#toggle-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary-color), var(--success-color), var(--warning-color));
+  border-top-right-radius: var(--border-radius);
 }
 
 /*─────────────────────────────────────────────────────────────────
-  THE CHEVRON HANDLE (VISIBLE EVEN WHEN COLLAPSED)
+  THE CHEVRON HANDLE (ENHANCED WITH MODERN STYLING)
 ──────────────────────────────────────────────────────────────────*/
 #sidebar-toggle {
   position: absolute;
-  top: 1rem;                     /* same vertical offset as the sidebar’s padding */
-  left: 240px;                   /* place it just to the right edge of sidebar */
-  width: 24px;
-  height: 24px;
-  background: #2563eb;
+  top: 1.5rem;
+  left: var(--sidebar-width);
+  width: 32px;
+  height: 32px;
+  background: var(--primary-color);
   color: #fff;
-  border-top-right-radius: 4px;
-  border-bottom-right-radius: 4px;
+  border-top-right-radius: var(--border-radius-sm);
+  border-bottom-right-radius: var(--border-radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, left 0.3s ease-in-out;
-  z-index: 1002;                 /* above the sidebar so it is always clickable */
+  transition: var(--transition-smooth);
+  z-index: 1002;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
+
 #sidebar-toggle:hover {
-  background: #1d4ed8;
+  background: var(--primary-hover);
+  transform: translateX(2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
 }
+
+#sidebar-toggle:active {
+  transform: translateX(1px) scale(0.95);
+}
+
 #sidebar-toggle i {
-  font-size: 1rem;
-  transition: transform 0.3s ease-in-out;
+  font-size: 1.1rem;
+  transition: var(--transition-smooth);
   user-select: none;
 }
 
-/* If the sidebar is collapsed, move the chevron all the way to x=20px
-   so you can still click it to reopen. Also, flip the icon. */
+/* Collapsed state positioning and icon rotation */
 #toggle-container.collapsed + #sidebar-toggle {
-  left: 20px;
+  left: 40px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
+
 #toggle-container.collapsed + #sidebar-toggle i {
   transform: rotate(180deg);
 }
 
 /*─────────────────────────────────────────────────────────────────
-  EACH “ROW” INSIDE THE SIDEBAR (SEARCH BOX, SELECTS, TOGGLES, ETC.)
+  ENHANCED ROW STYLING WITH MODERN CARDS
 ──────────────────────────────────────────────────────────────────*/
 .toggle-switch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-}
-.toggle-switch:not(:last-child) {
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #e2e8f0;
-  margin-bottom: 0.5rem;
-}
-.toggle-switch label.layer-label {
-  flex: 1;
-  font-size: 0.9rem;
-  color: #1e293b;
-  white-space: nowrap;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(248, 250, 252, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition-fast);
+  position: relative;
+  overflow: hidden;
 }
 
-/* Force any <select>, text input, or <button> to fit within each row
-   without overflowing. We use box-sizing:border-box so padding is included. */
+.toggle-switch:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.toggle-switch:not(:last-child) {
+  margin-bottom: 0.75rem;
+}
+
+/* Remove old border-bottom styling */
+.toggle-switch:not(:last-child) {
+  padding-bottom: 1rem;
+  border-bottom: none;
+}
+
+.toggle-switch label.layer-label {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  transition: var(--transition-fast);
+}
+
+.toggle-switch:hover label.layer-label {
+  color: var(--primary-color);
+}
+
+/* Enhanced form controls */
 .toggle-switch select,
 .toggle-switch input[type="text"],
 .toggle-switch button {
   flex: 1.2;
   font-size: 0.9rem;
   box-sizing: border-box;
-  max-width: 100%;              /* ensure it never overflows beyond the 240px container */
+  max-width: 100%;
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition-fast);
+  font-family: inherit;
+}
+
+.toggle-switch select,
+.toggle-switch input[type="text"] {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-primary);
+}
+
+.toggle-switch select:focus,
+.toggle-switch input[type="text"]:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background: rgba(255, 255, 255, 1);
 }
 
 /*─────────────────────────────────────────────────────────────────
-  CUSTOM SWITCHES (checkbox‐styled sliders)
+  ENHANCED CUSTOM SWITCHES WITH MODERN STYLING
 ──────────────────────────────────────────────────────────────────*/
 .switch {
   position: relative;
-  width: 36px;
-  height: 20px;
+  width: 44px;
+  height: 24px;
   flex-shrink: 0;
 }
+
 .switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
+
 .switch .slider {
   position: absolute;
   cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: #ccc;
-  transition: 0.2s;
-  border-radius: 10px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #cbd5e1;
+  transition: var(--transition-fast);
+  border-radius: 12px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
 .switch .slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 20px;
+  width: 20px;
   left: 2px;
   bottom: 2px;
-  background-color: #fff;
-  transition: 0.2s;
+  background: linear-gradient(145deg, #ffffff, #f1f5f9);
+  transition: var(--transition-fast);
   border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
+
 .switch input:checked + .slider {
-  background-color: #2563eb;
+  background: linear-gradient(145deg, var(--primary-color), var(--primary-hover));
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
 }
+
 .switch input:checked + .slider:before {
-  transform: translateX(16px);
+  transform: translateX(20px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.switch:hover .slider {
+  transform: scale(1.05);
 }
 
 /*─────────────────────────────────────────────────────────────────
-  SEARCH BOX STYLING
+  ENHANCED SEARCH BOX WITH MODERN STYLING
 ──────────────────────────────────────────────────────────────────*/
 #search-box {
   display: flex;
-  width: 100%;                   /* always fill the sidebar’s width */
+  width: 100%;
   box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
+
 #search-input {
   flex: 1;
-  padding: 6px 8px;
+  padding: 0.75rem 1rem;
   font-size: 0.9rem;
-  border: 1px solid #ccc;
-  border-radius: 4px 0 0 4px;
+  border: 1px solid var(--border-color);
+  border-right: none;
+  border-radius: var(--border-radius-sm) 0 0 var(--border-radius-sm);
   box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
+  transition: var(--transition-fast);
 }
+
+#search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 1);
+  box-shadow: inset 0 0 0 1px var(--primary-color);
+}
+
+#search-input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 #search-box button {
-  width: 36px;
-  border: 1px solid #ccc;
+  flex: 0 0 auto;
+  width: 44px;
+  max-width: 44px;
+  border: 1px solid var(--primary-color);
   border-left: none;
-  background: #2563eb;
+  background: linear-gradient(145deg, var(--primary-color), var(--primary-hover));
   color: #fff;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: var(--transition-fast);
+  position: relative;
+  overflow: hidden;
 }
+
 #search-box button:hover {
-  background: #1d4ed8;
+  background: linear-gradient(145deg, var(--primary-hover), #1d4ed8);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
+
+#search-box button:active {
+  transform: scale(0.95);
+}
+
 #search-box button::before {
-  content: "\f002";              /* Bootstrap Icons “search” */
+  content: "\f002";
   font-family: "Bootstrap Icons";
   font-size: 1rem;
   line-height: 1;
+  z-index: 1;
+  position: relative;
+}
+
+/* Add ripple effect */
+#search-box button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transition: width 0.3s ease, height 0.3s ease;
+  transform: translate(-50%, -50%);
+}
+
+#search-box button:active::after {
+  width: 100px;
+  height: 100px;
 }
 
 /*─────────────────────────────────────────────────────────────────
-  “+ Nouveau site” BUTTON
+  ENHANCED ACTION BUTTONS WITH MODERN STYLING
 ──────────────────────────────────────────────────────────────────*/
 .sim-btn {
   width: 100%;
-  padding: 6px 0;
-  background: #10b981;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(145deg, var(--success-color), var(--success-hover));
   color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.95rem;
+  font-weight: 500;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 0.5rem;
   cursor: pointer;
-  transition: background 0.2s;
-}
-.sim-btn:hover {
-  background: #0f9e6d;
+  transition: var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
-/*─────────────────────────────────────────────────────────────────
-  “Export PDF” BUTTON
-──────────────────────────────────────────────────────────────────*/
+.sim-btn:hover {
+  background: linear-gradient(145deg, var(--success-hover), #047857);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+.sim-btn:active {
+  transform: translateY(0);
+}
+
+.sim-btn i {
+  font-size: 1.1rem;
+  transition: var(--transition-fast);
+}
+
+.sim-btn:hover i {
+  transform: rotate(90deg);
+}
+
 .export-btn {
   width: 100%;
-  padding: 6px 0;
-  background: #d35400;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(145deg, var(--warning-color), var(--warning-hover));
   color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
 }
+
 .export-btn:hover {
-  background: #ba4a00;
+  background: linear-gradient(145deg, var(--warning-hover), #b45309);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+}
+
+.export-btn:active {
+  transform: translateY(0);
+}
+
+.export-btn::before {
+  content: '📄';
+  margin-right: 0.5rem;
+  font-size: 1rem;
 }
 
 /*─────────────────────────────────────────────────────────────────
-  INFO CARD (floats at bottom-right of the map)
+  ENHANCED INFO CARD WITH GLASSMORPHISM
 ──────────────────────────────────────────────────────────────────*/
 #info-card {
-  display: none;                        /* hidden by default */
-  position: absolute;                   /* floats on top of map */
-  z-index: 1002;                        /* above everything else */
-  bottom: 20px;                         /* appear 20px from bottom */
-  right: 20px;                          /* appear 20px from right */
-  background: rgba(255, 255, 255, 0.95);/* slightly translucent white */
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 1rem 1.25rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  min-width: 200px;
-  max-width: 260px;
+  display: none;
+  position: absolute;
+  z-index: 1002;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--sidebar-border);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  min-width: 240px;
+  max-width: 320px;
   font-family: 'Inter', sans-serif;
   font-size: 0.9rem;
   box-sizing: border-box;
+  animation: slideInUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-/* Close “×” button inside info-card */
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 #info-card .close-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  background: transparent;
-  border: none;
-  font-size: 1.1rem;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  font-size: 1rem;
   cursor: pointer;
-  color: #64748b;
-  transition: color 0.2s;
+  color: var(--text-secondary);
+  transition: var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
 #info-card .close-btn:hover {
-  color: #ef4444;
+  background: var(--danger-color);
+  color: #fff;
+  border-color: var(--danger-color);
+  transform: scale(1.1);
 }
+
 #info-card h3 {
   margin-top: 0;
-  margin-bottom: 0.5rem;
-  font-size: 1.1rem;
-  color: #1e293b;
+  margin-bottom: 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-right: 2rem;
 }
+
 #info-card p {
-  margin: 0.25rem 0;
-  line-height: 1.3;
-  color: #334155;
+  margin: 0.5rem 0;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
+
 #info-card p strong {
-  color: #1e293b;
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /*─────────────────────────────────────────────────────────────────
-  RESPONSIVE ADJUSTMENTS
+  ENHANCED RESPONSIVE DESIGN
 ──────────────────────────────────────────────────────────────────*/
 @media (max-width: 768px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+  
   #toggle-container {
-    width: 200px;
+    padding: 1.25rem;
+    gap: 1rem;
+  }
+  
+  #sidebar-toggle {
+    left: 240px;
+  }
+  
+  #toggle-container.collapsed {
+    transform: translateX(-200px);
+  }
+  
+  #toggle-container.collapsed + #sidebar-toggle {
+    left: 40px;
+  }
+  
+  .toggle-switch {
+    gap: 0.5rem;
     padding: 0.75rem;
   }
-  #sidebar-toggle {
-    left: 200px;
-  }
-  #toggle-container.collapsed + #sidebar-toggle {
-    left: 20px;
-  }
-  .toggle-switch {
-    gap: 0.4rem;
-  }
+  
   .sim-btn, .export-btn {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    padding: 0.625rem 0.75rem;
   }
 }
 
 @media (max-width: 576px) {
-  #toggle-container {
-    width: 180px;
-    padding: 0.5rem;
+  :root {
+    --sidebar-width: 200px;
   }
+  
+  #toggle-container {
+    padding: 1rem;
+    gap: 0.75rem;
+  }
+  
   #toggle-container.collapsed {
     transform: translateX(-160px);
   }
+  
   #sidebar-toggle {
-    left: 180px;
+    left: 200px;
+    width: 28px;
+    height: 28px;
   }
+  
   #toggle-container.collapsed + #sidebar-toggle {
-    left: 20px;
+    left: 40px;
   }
+  
   .toggle-switch {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.3rem;
+    gap: 0.5rem;
+    padding: 0.75rem;
   }
-  .toggle-switch:not(:last-child) {
-    margin-bottom: 0.5rem;
+  
+  .toggle-switch select,
+  .toggle-switch input[type="text"] {
+    width: 100%;
   }
+  
   .sim-btn, .export-btn {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
+    padding: 0.625rem;
+  }
+  
+  #info-card {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+    padding: 1.25rem;
   }
 }
 
-.toggle-switch select,
-.toggle-switch input[type="text"],
-.toggle-switch button {
-  flex: 1;         /* share space equally with sibling labels */
-  min-width: 0;    /* allow it to shrink down */
-  max-width: 100%; /* never overflow its parent */
-  box-sizing: border-box;
+/* Dark theme support (optional) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sidebar-bg: rgba(30, 41, 59, 0.95);
+    --sidebar-border: rgba(71, 85, 105, 0.8);
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-color: #475569;
+    --hover-bg: rgba(51, 65, 85, 0.8);
+  }
+  
+  .toggle-switch {
+    background: rgba(51, 65, 85, 0.5);
+    border-color: var(--border-color);
+  }
+  
+  .toggle-switch select,
+  .toggle-switch input[type="text"] {
+    background: rgba(30, 41, 59, 0.8);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+  }
+  
+  #search-input {
+    background: rgba(30, 41, 59, 0.9);
+  }
+  
+  #info-card {
+    background: rgba(30, 41, 59, 0.95);
+  }
 }
 
-#search-box button {
-  /* remove any flex: 1; inheritance */
-  flex: 0 0 auto;      /* prevent growing/shrinking via flexbox */
-  width: 36px;         /* keep the fixed icon‐button width */
-  max-width: 36px;     /* never exceed 36px */
-  box-sizing: border-box;
+/* Add subtle animations on load */
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toggle-switch {
+  animation: fadeInLeft 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+.toggle-switch:nth-child(1) { animation-delay: 0.1s; }
+.toggle-switch:nth-child(2) { animation-delay: 0.2s; }
+.toggle-switch:nth-child(3) { animation-delay: 0.3s; }
+.toggle-switch:nth-child(4) { animation-delay: 0.4s; }
+.toggle-switch:nth-child(5) { animation-delay: 0.5s; }
+.toggle-switch:nth-child(6) { animation-delay: 0.6s; }
+.toggle-switch:nth-child(7) { animation-delay: 0.7s; }
+.toggle-switch:nth-child(8) { animation-delay: 0.8s; }
+
+#mandante-filter{
+  width: 40px;
 }

@@ -22,7 +22,6 @@ from django.contrib.auth.decorators import login_required
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('frontend.urls')),
     path('__debug__/', include('debug_toolbar.urls')),  # Add this line
     # 1) Auth endpoints: login, logout
     path('accounts/', include('django.contrib.auth.urls')),
