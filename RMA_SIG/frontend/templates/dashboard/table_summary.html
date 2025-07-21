@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coverage Analysis - {{ model_name }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .filters {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-group label {
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        select, input[type="text"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .table-wrapper {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        th, td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+            white-space: nowrap;
+        }
+        
+        th {
+            background-color: #34495e;
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .score-excellent { background-color: #d4edda; color: #155724; }
+        .score-good { background-color: #fff3cd; color: #856404; }
+        .score-medium { background-color: #f8d7da; color: #721c24; }
+        .score-low { background-color: #f5c6cb; color: #721c24; }
+        
+        .number {
+            text-align: right;
+        }
+        
+        .clickable-row {
+            cursor: pointer;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 600px;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: black;
+        }
+        
+        .detail-section {
+            margin-bottom: 15px;
+        }
+        
+        .detail-section h4 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .detail-list {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .detail-list li {
+            padding: 3px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        @media (max-width: 768px) {
+            .filters {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .filter-group {
+                width: 100%;
+            }
+            
+            th, td {
+                padding: 6px 4px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Coverage Analysis - {{ model_name }}</h1>
+            
+            <form method="GET" class="filters">
+                <div class="filter-group">
+                    <label for="area_type">Area Type:</label>
+                    <select name="area_type" id="area_type" onchange="this.form.submit()">
+                        <option value="commune"  {% if area_type == 'commune'  %}selected{% endif %}>Communes</option>
+                        <option value="province" {% if area_type == 'province' %}selected{% endif %}>Provinces</option>
+                        <option value="region"   {% if area_type == 'region'   %}selected{% endif %}>Administrative Regions</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="search">Search:</label>
+                    <input type="text" name="search" id="search" value="{{ search_query }}" placeholder="Search by name...">
+                </div>
+                
+                <button type="submit" class="btn">Filter</button>
+            </form>
+        </div>
+        
+        <div class="table-container">
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Population</th>
+                            <th>Est. Vehicles</th>
+                            <th>Insured Pop.</th>
+                            <th>RMA Offices</th>
+                            <th>RMA BGD</th>
+                            <th>RMA Agents</th>
+                            <th>Competitors</th>
+                            <th>Banks</th>
+                            <th>Competition Intensity</th>
+                            <th>Bank Intensity</th>
+                            <th>Coverage Score</th>
+                            <th>Potential</th>
+                            <th>Avg Loss Ratio</th>
+                            <th>Total CA</th>
+                            {% if area_type == 'region' %}
+                            <th>Provinces</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in areas_data %}
+                        <tr class="clickable-row" onclick="showDetails('{{ item.area_id }}', '{{ area_type }}')">
+                            <td><strong>{{ item.area.name }}</strong></td>
+                            
+                            {% if area_type == 'region' %}
+                                <td class="number">{{ item.population|floatformat:0 }}</td>
+                                <td class="number">{{ item.estimated_vehicles|floatformat:0 }}</td>
+                                <td class="number">{{ item.insured_population|floatformat:0 }}</td>
+                                <td class="number">{{ item.rma_offices.count }}</td>
+                                <td class="number">-</td>
+                                <td class="number">-</td>
+                                <td class="number">{{ item.competition_count }}</td>
+                                <td class="number">{{ item.bank_count }}</td>
+                                <td class="number">{{ item.competition_intensity|floatformat:2 }}</td>
+                                <td class="number">{{ item.bank_intensity|floatformat:2 }}</td>
+                                <td class="number">{{ item.coverage_score|floatformat:1 }}</td>
+                                <td>
+                                    {% if item.coverage_score >= 80 %}
+                                        <span class="score-excellent">Excellent</span>
+                                    {% elif item.coverage_score >= 60 %}
+                                        <span class="score-good">Good</span>
+                                    {% elif item.coverage_score >= 40 %}
+                                        <span class="score-medium">Medium</span>
+                                    {% else %}
+                                        <span class="score-low">Low</span>
+                                    {% endif %}
+                                </td>
+                                <td class="number">-</td>
+                                <td class="number">-</td>
+                                <td class="number">{{ item.provinces_count }}</td>
+                            {% else %}
+                                <td class="number">{{ item.area.population|floatformat:0 }}</td>
+                                <td class="number">{{ item.area.estimated_vehicles|floatformat:0 }}</td>
+                                <td class="number">{{ item.area.insured_population|floatformat:0 }}</td>
+                                <td class="number">{{ item.rma_offices.count }}</td>
+                                <td class="number">{{ item.rma_bgd.count }}</td>
+                                <td class="number">{{ item.rma_agents.count }}</td>
+                                <td class="number">{{ item.area.competition_count }}</td>
+                                <td class="number">{{ item.area.bank_count }}</td>
+                                <td class="number">{{ item.area.competition_intensity|floatformat:2 }}</td>
+                                <td class="number">{{ item.area.bank_intensity|floatformat:2 }}</td>
+                                <td class="number">{% if item.coverage_score %}{{ item.coverage_score.score|floatformat:1 }}{% else %}-{% endif %}</td>
+                                <td>
+                                    {% if item.coverage_score %}
+                                        <span class="score-{{ item.coverage_score.potential|lower }}">{{ item.coverage_score.potential }}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="number">{% if item.avg_loss_ratio %}{{ item.avg_loss_ratio|floatformat:3 }}{% else %}-{% endif %}</td>
+                                <td class="number">{{ item.total_ca|floatformat:0 }}</td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="15" style="text-align: center; padding: 40px; color: #666;">
+                                No data available for the selected filters.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for detailed view -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modalContent">
+                <p>Loading...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showDetails(areaId, areaType) {
+            const modal = document.getElementById('detailModal');
+            const modalContent = document.getElementById('modalContent');
+            
+            modal.style.display = 'block';
+            modalContent.innerHTML = '<p>Loading...</p>';
+            
+            fetch(`/get-area-details/${areaId}/?area_type=${areaType}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        modalContent.innerHTML = `<p>Error: ${data.error}</p>`;
+                        return;
+                    }
+                    
+                    modalContent.innerHTML = `
+                        <h2>${data.name}</h2>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">${data.population.toLocaleString()}</div>
+                                <div class="stat-label">Population</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">${data.estimated_vehicles.toLocaleString()}</div>
+                                <div class="stat-label">Est. Vehicles</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">${data.competition_count}</div>
+                                <div class="stat-label">Competitors</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">${data.bank_count}</div>
+                                <div class="stat-label">Banks</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">${data.rma_offices_count}</div>
+                                <div class="stat-label">RMA Offices</div>
+                            </div>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h4>RMA Offices (${data.rma_offices.length})</h4>
+                            <ul class="detail-list">
+                                ${data.rma_offices.map(office => `<li>${office.name} (${office.type})</li>`).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h4>Top Competitors (${Math.min(data.competitors.length, 10)})</h4>
+                            <ul class="detail-list">
+                                ${data.competitors.map(comp => `<li>${comp.name} - ${comp.type}</li>`).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <h4>Top Banks (${Math.min(data.banks.length, 10)})</h4>
+                            <ul class="detail-list">
+                                ${data.banks.map(bank => `<li>${bank.name}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    modalContent.innerHTML = `<p>Error loading data: ${error.message}</p>`;
+                });
+        }
+        
+        function closeModal() {
+            document.getElementById('detailModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('detailModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

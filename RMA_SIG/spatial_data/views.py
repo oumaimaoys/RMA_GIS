@@ -822,3 +822,4 @@ def simulate_score(request):
         },
         "recommendations": recommendations
     })
+

@@ -26,4 +26,7 @@ urlpatterns = [
     # API endpoints for AJAX requests
     path('api/coverage-data/', views.api_coverage_data, name='api_coverage_data'),
     path('api/area-stats/<int:area_id>/', views.api_area_stats, name='api_area_stats'),
+
+    path('table-summary/', views.coverage_analysis_view, name='table-summary'),
+    path('get-area-details/<int:area_id>/', views.get_area_details, name='get_area_details'),
 ]

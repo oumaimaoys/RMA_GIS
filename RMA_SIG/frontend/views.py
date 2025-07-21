@@ -473,3 +473,193 @@ def api_area_stats(request, area_id):
         
     except Area.DoesNotExist:
         return JsonResponse({'error': 'Area not found'}, status=404)
+    
+from django.shortcuts import render
+from django.db.models import Q, Avg, Sum
+from django.contrib.gis.geos import MultiPolygon
+from spatial_data.models import (
+    Area, Commune, Province, RegionAdministrative, 
+    RMAOffice, RMABGD, RMAAgent, Competitor, Bank, 
+    LossRatio, CoverageScore, CA
+)
+
+def coverage_analysis_view(request):
+    area_type = request.GET.get('area_type', 'commune')
+    search_query = request.GET.get('search', '')
+
+    # Choose base queryset
+    if area_type == 'commune':
+        queryset = Commune.objects.all()
+        model_name = 'Commune'
+    elif area_type == 'province':
+        queryset = Province.objects.all()
+        model_name = 'Province'
+    elif area_type == 'region':
+        queryset = RegionAdministrative.objects.all()
+        model_name = 'Administrative Region'
+    else:
+        queryset = Area.objects.all()
+        model_name = 'Area'
+
+    if search_query:
+        queryset = queryset.filter(name__icontains=search_query)
+
+    if area_type == 'region':
+        regions_data = []
+
+        for region in queryset:
+            provinces_in_region = Province.objects.filter(id__in=region.provinces.values_list('id', flat=True))
+
+            total_population = sum(p.population for p in provinces_in_region)
+            total_estimated_vehicles = sum(p.estimated_vehicles for p in provinces_in_region)
+            total_insured_population = sum(p.insured_population for p in provinces_in_region)
+            total_competition_count = sum(p.competition_count for p in provinces_in_region)
+            total_bank_count = sum(p.bank_count for p in provinces_in_region)
+
+            avg_competition_intensity = (
+                sum(p.competition_intensity for p in provinces_in_region) / len(provinces_in_region)
+                if provinces_in_region else 0
+            )
+            avg_bank_intensity = (
+                sum(p.bank_intensity for p in provinces_in_region) / len(provinces_in_region)
+                if provinces_in_region else 0
+            )
+
+            # --- Optimization: Use merged MultiPolygon for spatial query
+            merged_boundary = MultiPolygon(*[p.boundary for p in provinces_in_region if p.boundary])
+            rma_offices = RMAOffice.objects.filter(location__within=merged_boundary) if merged_boundary else []
+
+            coverage_scores = CoverageScore.objects.filter(area__in=provinces_in_region)
+            avg_score = coverage_scores.aggregate(Avg('score'))['score__avg'] or 0
+
+            loss_ratios = LossRatio.objects.filter(
+                Q(province__in=provinces_in_region) |
+                Q(commune__province__in=provinces_in_region) |
+                Q(area__in=provinces_in_region)
+            )
+            avg_loss_ratio = loss_ratios.aggregate(Avg('loss_ratio'))['loss_ratio__avg'] or 0
+
+            regions_data.append({
+                'area': region,
+                'area_id': region.id,
+                'population': total_population,
+                'estimated_vehicles': total_estimated_vehicles,
+                'insured_population': total_insured_population,
+                'competition_count': total_competition_count,
+                'bank_count': total_bank_count,
+                'competition_intensity': avg_competition_intensity,
+                'bank_intensity': avg_bank_intensity,
+                'rma_offices': rma_offices,
+                'coverage_score': avg_score,
+                'avg_loss_ratio': avg_loss_ratio,
+                'provinces_count': len(provinces_in_region),
+            })
+
+        context = {
+            'areas_data': regions_data,
+            'area_type': area_type,
+            'model_name': model_name,
+            'search_query': search_query,
+        }
+
+    else:
+        areas_data = []
+        for area in queryset:
+            rma_offices = RMAOffice.objects.filter(location__within=area.boundary)
+            rma_bgd = RMABGD.objects.filter(location__within=area.boundary)
+            rma_agents = RMAAgent.objects.filter(location__within=area.boundary)
+
+            coverage_score = CoverageScore.objects.filter(area=area).order_by('-calculation_date').first()
+
+            loss_ratio_query = Q(area=area)
+            if isinstance(area, Commune):
+                loss_ratio_query |= Q(commune=area)
+            elif isinstance(area, Province):
+                loss_ratio_query |= Q(province=area)
+
+            avg_loss_ratio = LossRatio.objects.filter(loss_ratio_query).aggregate(Avg('loss_ratio'))['loss_ratio__avg'] or 0
+
+            total_ca = CA.objects.filter(agency__location__within=area.boundary).aggregate(Sum('CA_value'))['CA_value__sum'] or 0
+
+            areas_data.append({
+                'area': area,
+                'area_id': area.id,
+                'rma_offices': rma_offices,
+                'rma_bgd': rma_bgd,
+                'rma_agents': rma_agents,
+                'coverage_score': coverage_score,
+                'avg_loss_ratio': avg_loss_ratio,
+                'total_ca': total_ca,
+            })
+
+        context = {
+            'areas_data': areas_data,
+            'area_type': area_type,
+            'model_name': model_name,
+            'search_query': search_query,
+        }
+
+    return render(request, 'dashboard/table_summary.html', context)
+
+
+
+def get_area_details(request, area_id):
+    """
+    AJAX endpoint to get detailed information about a specific area
+    """
+    area_type = request.GET.get('area_type', 'commune')
+    
+    try:
+        if area_type == 'commune':
+            area = Commune.objects.get(id=area_id)
+        elif area_type == 'province':
+            area = Province.objects.get(id=area_id)
+        elif area_type == 'region':
+            area = RegionAdministrative.objects.get(id=area_id)
+        else:
+            area = Area.objects.get(id=area_id)
+        
+        # Get detailed data
+        if area_type == 'region':
+            # For regions, aggregate data from provinces
+            provinces_in_region = area.provinces.all()
+            
+            rma_offices = []
+            competitors = []
+            banks = []
+            
+            for province in provinces_in_region:
+                rma_offices.extend(RMAOffice.objects.filter(location__within=province.boundary))
+                competitors.extend(Competitor.objects.filter(location__within=province.boundary))
+                banks.extend(Bank.objects.filter(location__within=province.boundary))
+            
+            # Remove duplicates
+            rma_offices = list(set(rma_offices))
+            competitors = list(set(competitors))
+            banks = list(set(banks))
+            
+            total_population = sum(p.population for p in provinces_in_region)
+            total_estimated_vehicles = sum(p.estimated_vehicles for p in provinces_in_region)
+        else:
+            rma_offices = RMAOffice.objects.filter(location__within=area.boundary)
+            competitors = Competitor.objects.filter(location__within=area.boundary)
+            banks = Bank.objects.filter(location__within=area.boundary)
+            total_population = area.population
+            total_estimated_vehicles = area.estimated_vehicles
+        
+        data = {
+            'name': area.name,
+            'population': total_population,
+            'estimated_vehicles': total_estimated_vehicles,
+            'competition_count': len(competitors),
+            'bank_count': len(banks),
+            'rma_offices_count': len(rma_offices),
+            'competitors': [{'name': c.agency_name, 'type': c.competitor_type} for c in competitors[:10]],
+            'banks': [{'name': b.institution_name} for b in banks[:10]],
+            'rma_offices': [{'name': o.name, 'type': o.__class__.__name__} for o in rma_offices],
+        }
+        
+        return JsonResponse(data)
+    
+    except (Area.DoesNotExist, Commune.DoesNotExist, Province.DoesNotExist, RegionAdministrative.DoesNotExist):
+        return JsonResponse({'error': 'Area not found'}, status=404)
